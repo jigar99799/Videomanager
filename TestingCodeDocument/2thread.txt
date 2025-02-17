@@ -1,0 +1,143 @@
+#include "RandomGenerator.h"
+#include "JSONUtils.h"
+#include "XMLUtils.h"
+#include "TQueue.h"
+#include "Logger.h"  // Include the Logger class
+
+#include <thread>
+#include <chrono>
+#include <random>
+#include <mutex>
+#include <condition_variable>
+
+// Define the size of the array globally for simplicity
+constexpr int arraySize = 10;
+const std::chrono::minutes RUN_DURATION(1);
+std::chrono::steady_clock::time_point start_time;
+
+// Thread-safe queue to pass generated strings between threads
+TQueue<std::string> stringQueue;
+std::mutex mtx;
+std::condition_variable cv;
+std::atomic<bool> keepRunning(true);  // Atomic flag to control processing thread's running state
+
+// Create a logger instance to log messages
+Logger logger(Logger::OutputType::File);  // Log to console by default
+
+void createJSON(const MediaStreamDevice& device) {
+    std::string jsonString = JSONUtils::CreateJSON(device);
+    logger.log("Generated JSON: \n" + jsonString);
+}
+
+void createXML(const MediaStreamDevice& device) {
+    std::string xmlString = XMLUtils::CreateXML(device);
+    logger.log("Generated XML: \n" + xmlString);
+}
+
+void printStructure(const MediaStreamDevice& device) {
+     std::ostringstream oss;
+    oss << "\nDevice Name: " << device.sDeviceName << "\n";
+    oss << "Input Source Type: " << static_cast<int>(device.stinputMediaData.esourceType) << "\n";
+    oss << "Input Video Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.evideocodec) << "\n";
+    oss << "Input Audio Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudiocodec) << "\n";
+    oss << "Input Audio Sample Rate: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
+    oss << "Input Container Format: " << static_cast<int>(device.stinputMediaData.stFileSource.econtainerFormat) << "\n";
+    oss << "Input Streaming Protocol: " << static_cast<int>(device.stinputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
+    oss << "Input IP Address: " << device.stinputMediaData.stNetworkStreaming.sIpAddress << "\n";
+    oss << "Input Port: " << device.stinputMediaData.stNetworkStreaming.iPort << "\n";
+    oss << "Input Streaming Type: " << static_cast<int>(device.stinputMediaData.estreamingType) << "\n";
+    oss << "Input Action: " << static_cast<int>(device.stinputMediaData.eaction) << "\n";
+
+    oss << "Output Source Type: " << static_cast<int>(device.stoutputMediaData.esourceType) << "\n";
+    oss << "Output Video Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.evideocodec) << "\n";
+    oss << "Output Audio Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudiocodec) << "\n";
+    oss << "Output Audio Sample Rate: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
+    oss << "Output Container Format: " << static_cast<int>(device.stoutputMediaData.stFileSource.econtainerFormat) << "\n";
+    oss << "Output Streaming Protocol: " << static_cast<int>(device.stoutputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
+    oss << "Output IP Address: " << device.stoutputMediaData.stNetworkStreaming.sIpAddress << "\n";
+    oss << "Output Port: " << device.stoutputMediaData.stNetworkStreaming.iPort << "\n";
+    oss << "Output Streaming Type: " << static_cast<int>(device.stoutputMediaData.estreamingType) << "\n";
+    oss << "Output Action: " << static_cast<int>(device.stoutputMediaData.eaction) << "\n";
+    
+    oss << "------------------------------------------------------------------------------------------------------\n";
+    // Log the structure information
+    logger.log(oss.str());
+}
+
+void processGeneratedString() {
+    while (keepRunning) {
+        std::unique_lock<std::mutex> lock(mtx);
+
+        // Wait until there is something to process
+        cv.wait(lock, []{ return !stringQueue.isEmpty(); });
+
+        // Get the string from the queue
+        std::string generatedString = stringQueue.dequeue();
+
+        lock.unlock();  // Unlock the mutex before processing
+
+        // Check whether it's XML or JSON (this is a basic check)
+        if (generatedString.substr(0, 1) == "{") {
+            // It seems like JSON
+            MediaStreamDevice device;
+            JSONUtils::ParseJSON(generatedString, device);
+            logger.log("Parsed JSON");  // Log JSON parsing
+            printStructure(device);
+        } else if (generatedString.substr(0, 1) == "<") {
+            // It seems like XML
+            MediaStreamDevice device;
+            XMLUtils::ParseXML(generatedString, device);
+            logger.log("Parsed XML");  // Log XML parsing
+            printStructure(device);
+        } else {
+            logger.log("Unknown string format");
+        }
+    }
+}
+
+int main() {
+    srand(static_cast<unsigned>(time(0))); // Seed the random number generator
+
+    // Create a thread to handle the processing of strings (XML or JSON)
+    std::thread processingThread(processGeneratedString);
+
+    // Create a thread to handle the generation of strings (JSON or XML)
+    std::thread taskThread([]() {
+        start_time = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start_time < RUN_DURATION) {
+            // Sleep for 10 milliseconds
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            // Generate a random MediaStreamDevice structure
+            MediaStreamDevice generatedDevice = RandomGenerator::generateRandomMediaStreamDevice(rand() % arraySize);
+
+            // Generate a random value between 0 and 1 to choose between XML or JSON
+            int choice = rand() % 2;
+
+            // Based on the random choice, create either XML or JSON
+            std::string generatedString;
+            if (choice == 0) {
+                createXML(generatedDevice);
+                generatedString = XMLUtils::CreateXML(generatedDevice);  // Store the string in generatedString
+            } else {
+                createJSON(generatedDevice);
+                generatedString = JSONUtils::CreateJSON(generatedDevice);  // Store the string in generatedString
+            }
+
+            stringQueue.enqueue(generatedString);
+            cv.notify_one();  // Notify the processing thread
+        }
+    });
+
+    // Join the threads to make sure they complete before exiting
+    taskThread.join();
+
+    // Once the task thread finishes, stop the processing thread
+    keepRunning = false;  // Set the flag to stop the processing thread
+    cv.notify_one();  // Wake up the processing thread to exit
+
+    // Join the processing thread to ensure it finishes gracefully
+    processingThread.join();
+
+    return 0;
+}

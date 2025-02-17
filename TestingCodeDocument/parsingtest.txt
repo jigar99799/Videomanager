@@ -1,0 +1,81 @@
+#include "RandomGenerator.h"
+#include "JSONUtils.h"
+#include "XMLUtils.h"
+
+#include <thread>
+#include <chrono>
+#include <random>
+
+// Define the size of the array globally for simplicity
+constexpr int arraySize = 10;
+const std::chrono::minutes RUN_DURATION(1);
+std::chrono::steady_clock::time_point start_time;
+
+void createJSON(const MediaStreamDevice& device) {
+    std::string jsonString = JSONUtils::CreateJSON(device);
+    std::cout << "Generated JSON: \n" << jsonString << std::endl;
+}
+
+void createXML(const MediaStreamDevice& device) {
+    std::string xmlString = XMLUtils::CreateXML(device);
+    std::cout << "Generated XML: \n" << xmlString << std::endl;
+}
+
+void printStructure(MediaStreamDevice& device) {
+    std::cout << "Device Name: " << device.sDeviceName << "\n";
+    std::cout << "Input Source Type: " << static_cast<int>(device.stinputMediaData.esourceType) << "\n";
+    std::cout << "Input Video Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.evideocodec) << "\n";
+    std::cout << "Input Audio Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudiocodec) << "\n";
+    std::cout << "Input Audio Sample Rate: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
+    std::cout << "Input Container Format: " << static_cast<int>(device.stinputMediaData.stFileSource.econtainerFormat) << "\n";
+    std::cout << "Input Streaming Protocol: " << static_cast<int>(device.stinputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
+    std::cout << "Input IP Address: " << device.stinputMediaData.stNetworkStreaming.sIpAddress << "\n";
+    std::cout << "Input Port: " << device.stinputMediaData.stNetworkStreaming.iPort << "\n";
+    std::cout << "Input Streaming Type: " << static_cast<int>(device.stinputMediaData.estreamingType) << "\n";
+    std::cout << "Input Action: " << static_cast<int>(device.stinputMediaData.eaction) << "\n";
+
+    std::cout << "Output Source Type: " << static_cast<int>(device.stoutputMediaData.esourceType) << "\n";
+    std::cout << "Output Video Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.evideocodec) << "\n";
+    std::cout << "Output Audio Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudiocodec) << "\n";
+    std::cout << "Output Audio Sample Rate: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
+    std::cout << "Output Container Format: " << static_cast<int>(device.stoutputMediaData.stFileSource.econtainerFormat) << "\n";
+    std::cout << "Output Streaming Protocol: " << static_cast<int>(device.stoutputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
+    std::cout << "Output IP Address: " << device.stoutputMediaData.stNetworkStreaming.sIpAddress << "\n";
+    std::cout << "Output Port: " << device.stoutputMediaData.stNetworkStreaming.iPort << "\n";
+    std::cout << "Output Streaming Type: " << static_cast<int>(device.stoutputMediaData.estreamingType) << "\n";
+    std::cout << "Output Action: " << static_cast<int>(device.stoutputMediaData.eaction) << "\n";
+    std::cout << "-------------------------------\n";
+}
+
+int main() {
+    srand(static_cast<unsigned>(time(0))); // Seed the random number generator
+
+    // Create a thread to handle the task
+    std::thread taskThread([](){
+        start_time = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start_time < RUN_DURATION) {
+            // Sleep for 10 milliseconds
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+
+            // Generate a random MediaStreamDevice structure
+            MediaStreamDevice generatedDevice = RandomGenerator::generateRandomMediaStreamDevice(rand() % arraySize);
+
+            // Generate a random value between 0 and 1 to choose between XML or JSON
+            int choice = rand() % 2;
+
+            // Based on the random choice, create either XML or JSON
+            if (choice == 0) {
+                createXML(generatedDevice);
+            } else {
+                createJSON(generatedDevice);
+            }
+
+            printStructure(generatedDevice);
+        }
+    });
+
+    // Join the thread to make sure it completes before exiting
+    taskThread.join();
+
+    return 0;
+}
