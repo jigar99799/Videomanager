@@ -3,8 +3,10 @@
 #include <Poco/JSON/Parser.h>
 #include <sstream>
 
-std::string JSONUtils::CreateJSON(const MediaStreamDevice& device) {
-    try {
+std::string JSONUtils::CreateJSON(const MediaStreamDevice& device) 
+{
+    try 
+    {
         Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
         
         // Set DeviceName
@@ -27,13 +29,16 @@ std::string JSONUtils::CreateJSON(const MediaStreamDevice& device) {
         std::stringstream jsonStream;
         root->stringify(jsonStream, 2); // Pretty print with indentation of 2
         return jsonStream.str();
-    } catch (const Poco::Exception& ex) {
+    } 
+    catch (const Poco::Exception& ex) 
+    {
         std::cerr << "Error creating JSON: " << ex.displayText() << std::endl;
         return "";
     }
 }
 
-void JSONUtils::addMediaDataToJSON(Poco::JSON::Object::Ptr& mediaDataObject, const MediaData& mediaData) {
+void JSONUtils::addMediaDataToJSON(Poco::JSON::Object::Ptr& mediaDataObject, const MediaData& mediaData) 
+{
     mediaDataObject->set("SourceType", static_cast<int>(mediaData.esourceType));
 
     // MediaCodec
@@ -59,7 +64,8 @@ void JSONUtils::addMediaDataToJSON(Poco::JSON::Object::Ptr& mediaDataObject, con
     mediaDataObject->set("StreamingType", static_cast<int>(mediaData.estreamingType));
 }
 
-void JSONUtils::ParseJSON(const std::string& jsonString, MediaStreamDevice& device) {
+void JSONUtils::ParseJSON(const std::string& jsonString, MediaStreamDevice& device) 
+{
     try {
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(jsonString);
@@ -81,11 +87,13 @@ void JSONUtils::ParseJSON(const std::string& jsonString, MediaStreamDevice& devi
     }
 }
 
-void JSONUtils::parseMediaDataFromJSON(Poco::JSON::Object::Ptr mediaDataObject, MediaData& mediaData) {
+void JSONUtils::parseMediaDataFromJSON(Poco::JSON::Object::Ptr mediaDataObject, MediaData& mediaData) 
+{
     mediaData.esourceType = static_cast<eSourceType>(mediaDataObject->getValue<int>("SourceType"));
 
     // MediaCodec
-    if (mediaDataObject->has("MediaCodec")) {
+    if (mediaDataObject->has("MediaCodec")) 
+    {
         Poco::JSON::Object::Ptr mediaCodecObject = mediaDataObject->getObject("MediaCodec");
         mediaData.stMediaCodec.evideocodec = static_cast<eVideoCodec>(mediaCodecObject->getValue<int>("VideoCodec"));
         mediaData.stMediaCodec.eaudiocodec = static_cast<eAudioCodec>(mediaCodecObject->getValue<int>("AudioCodec"));
@@ -93,13 +101,15 @@ void JSONUtils::parseMediaDataFromJSON(Poco::JSON::Object::Ptr mediaDataObject, 
     }
 
     // MediaFileSource
-    if (mediaDataObject->has("MediaFileSource")) {
+    if (mediaDataObject->has("MediaFileSource")) 
+    {
         Poco::JSON::Object::Ptr mediaFileSourceObject = mediaDataObject->getObject("MediaFileSource");
         mediaData.stFileSource.econtainerFormat = static_cast<eContainerFormat>(mediaFileSourceObject->getValue<int>("ContainerFormat"));
     }
 
     // NetworkStreaming
-    if (mediaDataObject->has("NetworkStreaming")) {
+    if (mediaDataObject->has("NetworkStreaming")) 
+    {
         Poco::JSON::Object::Ptr networkStreamingObject = mediaDataObject->getObject("NetworkStreaming");
         mediaData.stNetworkStreaming.estreamingProtocol = static_cast<eStreamingProtocol>(networkStreamingObject->getValue<int>("StreamingProtocol"));
         mediaData.stNetworkStreaming.sIpAddress = networkStreamingObject->getValue<std::string>("IpAddress");

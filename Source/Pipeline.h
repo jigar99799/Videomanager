@@ -3,7 +3,8 @@
 
 #include "Struct.h"  
 
-class Pipeline {
+class Pipeline 
+{
 public:
     size_t m_uiPipelineID;
     size_t m_uiRequestID;

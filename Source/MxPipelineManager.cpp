@@ -1,240 +1,352 @@
-#if 0
-// CMxPipeManager.cpp
-#include "MxPipeManager.h"
-
-void CMxPipeManager::addPipeline(const Pipeline& pipeline) {
-    parsedQueue.enqueue(pipeline);
-}
-
-void CMxPipeManager::processQueue() {
-    while (!parsedQueue.isEmpty()) {
-        Pipeline currentPipeline = parsedQueue.dequeue();
-        createPipeline(currentPipeline);
-    }
-}
-
-// void CMxPipeManager::handlePipelineAction(const std::string& pipelineId, const std::string& requestId, const std::string& action) {
-//     if (action == "create") {
-//         processQueue(); // Process the queue to create pipelines
-//     } else if (action == "play") {
-//         startPipeline(pipelineId);
-//     } else if (action == "pause") {
-//         pausePipeline(pipelineId);
-//     } else if (action == "stop") {
-//         stopPipeline(pipelineId);
-//     }
-// }
-
-void CMxPipeManager::createPipeline(const Pipeline& currentPipeline) 
-{
-
-        MediaStreamDevice inputDevice = currentPipeline.m_stMediaStreamDevice;
-    
-             // Create GStreamer pipeline
- gst_init(NULL,NULL);
-        // Create GStreamer pipeline
-        GstElement* pipeline = gst_pipeline_new("test-pipeline");
-    
-        // Create GStreamer elements based on input media data
-        GstElement* source = nullptr;
-    
-        // Determine the source based on the MediaStreamDevice parameters
-        if (inputDevice.stinputMediaData.esourceType == eSourceType::SOURCE_TYPE_NETWORK) {
-            source = gst_element_factory_make("rtspsrc", "source");
-            g_object_set(source, "location", inputDevice.stinputMediaData.stNetworkStreaming.sIpAddress.c_str(), nullptr);
-        } else if (inputDevice.stinputMediaData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_FILE) {
-            source = gst_element_factory_make("filesrc", "source");
-            g_object_set(source, "location", inputDevice.stinputMediaData.stFileSource.econtainerFormat.c_str(), nullptr);
-        }
-    
-        // Create specific decoder based on the codec type
-        GstElement* decoder = nullptr;
-        switch (inputDevice.stinputMediaData.stMediaCodec.evideocodec) {
-            case eVideoCodec::VIDEO_CODEC_H264:
-                decoder = gst_element_factory_make("avdec_h264", "h264decoder");
-                break;
-            case eVideoCodec::VIDEO_CODEC_H265:
-                decoder = gst_element_factory_make("avdec_h265", "h265decoder");
-                break;
-            case eVideoCodec::VIDEO_CODEC_MP2V:
-                decoder = gst_element_factory_make("avdec_mpeg2video", "mp2vdecoder");
-                break;
-            // Add more codec cases as needed
-            default:
-                g_printerr("Unsupported video codec for pipeline ID: %s\n", currentPipeline.pipelineId.c_str());
-                return; // Skip this pipeline on failure
-        }
-    
-        // Determine the sink based on the streaming type
-        GstElement* sink = nullptr;
-        if (inputDevice.stinputMediaData.estreamingType == eStreamingType::STREAMING_TYPE_LIVE) {
-            sink = gst_element_factory_make("autovideosink", "sink"); // For video output
-        } else if (inputDevice.stinputMediaData.estreamingType == eStreamingType::STREAMING_TYPE_FILE) {
-            sink = gst_element_factory_make("filesink", "sink");
-            g_object_set(sink, "location", "output.mp4", nullptr); // Example output file
-        }
-    
-        // Check if elements were created successfully
-        if (!source || !decoder || !sink) {
-            g_printerr("Not all elements could be created for pipeline ID: %s\n", currentPipeline.pipelineId.c_str());
-            return; // Skip this pipeline on failure
-        }
-    
-        // Add elements to the pipeline
-        gst_bin_add_many(GST_BIN(pipeline), source, decoder, sink, nullptr);
-        gst_element_link(source, decoder);
-        g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), sink);
-    
-        // Store the pipeline in the map
-        pipelines[currentPipeline.pipelineId] = pipeline;
-    
-        // Start the pipeline
-        gst_element_set_state(pipeline, GST_STATE_PLAYING);
-}
-
-void CMxPipeManager::startPipeline(const std::string& pipelineId) {
-    auto it = pipelines.find(pipelineId);
-    if (it != pipelines.end()) {
-        gst_element_set_state(it->second, GST_STATE_PLAYING);
-    }
-
- // Create GStreamer pipeline
- gst_init(NULL,NULL);
- GstElement* pipeline = gst_pipeline_new("new-piplein");
- if (!pipeline) {
-   ///  g_printerr("Failed to create pipeline for ID: %s\n", 1);
-     return;
- }
-
- // Create GStreamer elements
- GstElement* source = gst_element_factory_make("rtspsrc", "source");
- GstElement* depay = gst_element_factory_make("rtph264depay", "depay");
- GstElement* decoder = gst_element_factory_make("avdec_h264", "decoder");
- GstElement* convert = gst_element_factory_make("videoconvert", "convert");
- GstElement* sink = gst_element_factory_make("autovideosink", "sink");
-
- if (!source || !depay || !decoder || !convert || !sink) {
- //    g_printerr("Failed to create one or more elements for pipeline ID: %s\n", 1);
-     if (pipeline) gst_object_unref(pipeline);
-     return;
- }
-
- // Set RTSP source properties
- g_object_set(source, "location", "rtsp://admin:admin@192.168.111.150/unicaststream/1", "protocols", 4, nullptr);
-
- // Add elements to the pipeline
- gst_bin_add_many(GST_BIN(pipeline), source, depay, decoder, convert, sink, nullptr);
-
- // Link static elements (dynamic link for decodebin is handled via signal)
- if (!gst_element_link(depay, decoder) ||
-     !gst_element_link(decoder, convert) ||
-     !gst_element_link(convert, sink)) {
-    // g_printerr("Element linking failed for pipeline ID: %s\n",1);
-     gst_object_unref(pipeline);
-     return;
- }
-
- // Handle dynamic pad linking for rtspsrc
- g_signal_connect(source, "pad-added", G_CALLBACK(on_pad_added), depay);
-
- // Store the pipeline in the map
- //pipelines[currentPipeline.pipelineId] = 1;
-
- // Start the pipeline
- gst_element_set_state(pipeline, GST_STATE_PLAYING);
-
-
-}
-
-void CMxPipeManager::stopPipeline(const std::string& pipelineId) {
-    auto it = pipelines.find(pipelineId);
-    if (it != pipelines.end()) {
-        gst_element_set_state(it->second, GST_STATE_NULL);
-        gst_object_unref(it->second);
-        pipelines.erase(it);
-    }
-}
-
-void CMxPipeManager::pausePipeline(const std::string& pipelineId) {
-    auto it = pipelines.find(pipelineId);
-    if (it != pipelines.end()) {
-        gst_element_set_state(it->second, GST_STATE_PAUSED);
-    }
-}
-
-void CMxPipeManager::on_pad_added(GstElement* src, GstPad* pad, gpointer data) {
-    GstElement* sink = GST_ELEMENT(data);
-    GstPad* sink_pad = gst_element_get_static_pad(sink, "sink");
-    gst_pad_link(pad, sink_pad);
-    gst_object_unref(sink_pad);
-}
-#endif 
 #include "MxPipelineManager.h"
+#include "MediaStreamDevice.h"
 #include <iostream>
+#include <chrono>
+#include <random>
+#include <sstream>
+#include <atomic>
 
-PipelineManager::PipelineManager() : m_running(true), m_workerThread(&PipelineManager::processQueue, this) {}
+// Use the scope resolution operator for PipelineID
+using PipelineID = PipelineManager::PipelineID;
 
-PipelineManager::~PipelineManager() {
+// Add this at the top of the file with other static members
+std::atomic<PipelineID> PipelineManager::nextPipelineId{1};
+
+// Constructor
+PipelineManager::PipelineManager() : m_running(true) 
+{
+    // Initialize logger
+    m_logger = std::make_unique<Logger>(Logger::OutputType::File, "pipeline_manager.log");
+    m_logger->log("Pipeline Manager initialized");
+    
+    // Start the worker thread for processing queue
+    m_workerThread = std::thread(&PipelineManager::processQueue, this);
+}
+
+// Destructor
+PipelineManager::~PipelineManager() 
+{
     m_running = false;
+    m_cv.notify_all();
+    
     if (m_workerThread.joinable()) {
         m_workerThread.join();
     }
-    for (auto& entry : m_pipelineHandlers) {
-        delete entry.second;
-    }
+    
+    // Clear all pipelines
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_pipelineHandlers.clear();
 }
 
-void PipelineManager::processQueue() {
-    while (m_running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        std::lock_guard<std::mutex> lock(m_mutex);
+// Queue processing
+void PipelineManager::processQueue() 
+{
 
-        while (!m_pipelineQueue.empty()) {
-            Pipeline pipelineData = m_pipelineQueue.front();
-            m_pipelineQueue.pop();
-            createPipelineInternal(pipelineData);
+    while (m_running) 
+    {
+        MediaStreamDevice streamDevice;
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this] { 
+                return !m_running || !m_requestQueue.empty(); 
+            });
+            
+            if (!m_running) break;
+            
+            streamDevice = m_requestQueue.front();
+            m_requestQueue.pop();
+        }
+        
+        std::cout << "Getting the first id : "  << std::endl;
+
+        // Check for existing matching pipeline
+        PipelineID existingId;
+        if (findMatchingPipeline(streamDevice, existingId)) 
+        {
+            std::cout << "findMatchingPipeline" << std::endl;
+            // Update existing pipeline if needed
+            if (canUpdatePipeline(existingId, streamDevice)) 
+            {
+                updatePipelineInternal(existingId, streamDevice);
+                m_logger->log("Updated existing pipeline: " + std::to_string(existingId));
+            }
+        } 
+        else if (validatePipelineConfig(streamDevice)) 
+        {
+
+            std::cout << "validatePipelineConfig: " << std::endl;
+
+            createPipelineInternal(streamDevice);
+        } 
+        else 
+        {
+            std::cout << "Invalid pipeline configuration received" << std::endl;
+            m_logger->log("Invalid pipeline configuration received");
         }
     }
 }
 
-void PipelineManager::createPipelineInternal(const Pipeline& pipeline) {
-    size_t pipelineID = pipeline.getPipelineID();
-    if (m_pipelineHandlers.find(pipelineID) != m_pipelineHandlers.end()) {
-        std::cerr << "Pipeline already exists. Updating instead.\n";
-        m_pipelineHandlers[pipelineID]->updatePipeline(pipeline);
-        return;
+// Pipeline validation methods
+bool PipelineManager::validatePipelineConfig(const MediaStreamDevice& streamDevice) const 
+{
+    // Validate source type and network configuration
+    if (streamDevice.sourceType() == SourceType::NETWORK) {
+        if (streamDevice.address().empty() || streamDevice.port() <= 0) {
+            m_logger->log("Invalid network configuration: address or port missing");
+            return false;
+        }
     }
-    std::cerr << "Pipeline new create" << pipelineID <<std::endl;
-    PipelineHandler* handler = new PipelineHandler(pipeline);
-    m_pipelineHandlers[pipelineID] = handler;
+    
+    // Validate codec configuration
+    const MediaCodec& inputCodec = streamDevice.inputCodec();
+    if (inputCodec.type == CodecType::H264 || inputCodec.type == CodecType::H265) {
+        if (inputCodec.bitrate <= 0) {
+            m_logger->log("Invalid codec configuration: bitrate not set");
+            return false;
+        }
+    }
+    
+    return true;
 }
 
-void PipelineManager::enqueuePipeline(const Pipeline& pipeline) {
+bool PipelineManager::canUpdatePipeline(PipelineID id, const MediaStreamDevice& streamDevice) const 
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_pipelineQueue.push(pipeline);
-}
-
-void PipelineManager::startPipeline(size_t pipelineID) {
-    if (m_pipelineHandlers.find(pipelineID) != m_pipelineHandlers.end()) {
-        m_pipelineHandlers[pipelineID]->start();
-    }
-    else
+    
+    auto it = m_pipelineHandlers.find(id);
+    if (it == m_pipelineHandlers.end()) 
     {
-        std::cerr << "Pipeline start end received" << pipelineID <<std::endl;
+        return false;
+    }
+    
+    const MediaStreamDevice& existingConfig = it->second->getConfig();
+    if (existingConfig.sourceType() != streamDevice.sourceType()) 
+    {
+        m_logger->log("Cannot update pipeline: source type mismatch");
+        return false;
+    }
+    
+    return true;
+}
+
+// Pipeline ID generation
+PipelineID PipelineManager::generateUniquePipelineId() const {
+    // Generate sequential IDs starting from 1
+    return nextPipelineId.fetch_add(1, std::memory_order_relaxed);
+}
+
+bool PipelineManager::isPipelineExists(PipelineID id) const 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_pipelineHandlers.find(id) != m_pipelineHandlers.end();
+}
+
+// Pipeline creation and update methods
+void PipelineManager::createPipelineInternal(const MediaStreamDevice& streamDevice) 
+{
+
+
+
+    
+    PipelineID id = generateUniquePipelineId();
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    std::cout << "createPipelineInternal generateUniquePipelineId id = " << id <<std::endl;
+
+    auto handler = std::make_unique<PipelineHandler>(streamDevice);
+    
+    // Set callbacks
+    handler->setStateCallback([this, id](PipelineHandler::State state) 
+        {
+        std::string stateStr;
+        switch (state) 
+        {
+            case PipelineHandler::State::PLAYING: stateStr = "PLAYING"; break;
+            case PipelineHandler::State::PAUSED: stateStr = "PAUSED"; break;
+            case PipelineHandler::State::STOPPED: stateStr = "STOPPED"; break;
+            default: stateStr = "UNKNOWN"; break;
+        }
+        m_logger->log("Pipeline " + std::to_string(id) + " state changed to: " + stateStr);
+    });
+    
+    handler->setErrorCallback([this, id](const std::string& error) 
+    {
+        m_logger->log("Pipeline " + std::to_string(id) + " error: " + error);
+    });
+    
+    m_pipelineHandlers[id] = std::move(handler);
+    m_logger->log("Created pipeline with ID: " + std::to_string(id));
+}
+
+void PipelineManager::updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        if (it->second->updateConfiguration(streamDevice)) {
+            m_logger->log("Successfully updated pipeline: " + std::to_string(id));
+        } else {
+            m_logger->log("Failed to update pipeline: " + std::to_string(id));
+        }
     }
 }
 
-void PipelineManager::pausePipeline(size_t pipelineID) {
-    if (m_pipelineHandlers.find(pipelineID) != m_pipelineHandlers.end()) {
-        m_pipelineHandlers[pipelineID]->pause();
+// Public interface implementations
+PipelineID PipelineManager::createPipeline(const MediaStreamDevice& streamDevice) 
+{
+    PipelineID id = generateUniquePipelineId();
+    enqueueRequest(streamDevice);
+    std::cout << "createPipeline DOne 1" << std::endl;
+    return id;
+}
+
+bool PipelineManager::updatePipeline(PipelineID id, const MediaStreamDevice& streamDevice) 
+{
+    if (!isPipelineExists(id)) return false;
+    updatePipelineInternal(id, streamDevice);
+    return true;
+}
+
+void PipelineManager::enqueueRequest(const MediaStreamDevice& streamDevice) 
+{
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_requestQueue.push(streamDevice);
+    }
+    m_cv.notify_one();
+}
+
+// Pipeline control operations
+bool PipelineManager::startPipeline(PipelineID id) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        return it->second->start();
+    }
+    return false;
+}
+
+bool PipelineManager::pausePipeline(PipelineID id) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        return it->second->pause();
+    }
+    return false;
+}
+
+bool PipelineManager::resumePipeline(PipelineID id) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        return it->second->resume();
+    }
+    return false;
+}
+
+bool PipelineManager::stopPipeline(PipelineID id) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        if (it->second->stop()) 
+        {
+            m_pipelineHandlers.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PipelineManager::terminatePipeline(PipelineID id) 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        it->second->terminate();
+        m_pipelineHandlers.erase(it);
+        return true;
+    }
+    return false;
+}
+
+// Status queries
+bool PipelineManager::isPipelineRunning(PipelineID id) const 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
+    {
+        return it->second->isRunning();
+    }
+    return false;
+}
+
+std::vector<PipelineID> PipelineManager::getActivePipelines() const 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<PipelineID> activePipelines;
+    for (const auto& [id, handler] : m_pipelineHandlers) 
+    {
+        if (handler->isRunning()) 
+        {
+            activePipelines.push_back(id);
+        }
+    }
+    return activePipelines;
+}
+
+size_t PipelineManager::getQueueSize() const 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_requestQueue.size();
+}
+
+// Logger initialization
+bool PipelineManager::initializeLogger(const std::string& loggerPath) 
+{
+    try 
+    {
+        // TODO: Implement DLL loading logic
+        /* Example pseudo-code for future implementation:
+        HMODULE hDLL = LoadLibrary(loggerPath.c_str());
+        if (hDLL) {
+            auto initFunc = GetProcAddress(hDLL, "InitializeLogger");
+            auto logFunc = GetProcAddress(hDLL, "LogMessage");
+            // Initialize logger with configuration
+        }
+        */
+        
+        m_logger->log("Logger DLL initialized successfully");
+        return true;
+    } 
+    catch (const std::exception& e) 
+    {
+        std::cerr << "Failed to initialize logger: " << e.what() << std::endl;
+        return false;
     }
 }
 
-void PipelineManager::stopPipeline(size_t pipelineID) {
-    if (m_pipelineHandlers.find(pipelineID) != m_pipelineHandlers.end()) {
-        m_pipelineHandlers[pipelineID]->stop();
-        delete m_pipelineHandlers[pipelineID];
-        m_pipelineHandlers.erase(pipelineID);
+bool PipelineManager::findMatchingPipeline(const MediaStreamDevice& streamDevice, PipelineID& outId) const 
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    for (const auto& [id, handler] : m_pipelineHandlers) {
+        const MediaStreamDevice& existingConfig = handler->getConfig();
+        
+        if (existingConfig.sourceType() == streamDevice.sourceType() &&
+            existingConfig.mediaType() == streamDevice.mediaType() &&
+            existingConfig.address() == streamDevice.address() &&
+            existingConfig.port() == streamDevice.port()) {
+            
+            outId = id;
+            return true;
+        }
     }
+    
+    return false;
 }

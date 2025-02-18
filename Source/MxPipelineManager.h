@@ -1,63 +1,72 @@
-
-#if 0
-// CMxPipeManager.h
-#pragma once
-
-#include <gst/gst.h>
-#include <unordered_map>
-#include <string>
-#include "Pipeline.h"  // Include your Pipeline structure definition
-#include "TQueue.h"    // Include your TQueue definition
-
-class CMxPipeManager {
-public:
-    void addPipeline(const Pipeline& pipeline);
-    void handlePipelineAction(const std::string& pipelineId, const std::string& requestId, const std::string& action);
-    
-private:
-    TQueue<Pipeline> parsedQueue; // Queue to hold pipeline data
-    std::unordered_map<std::string, GstElement*> pipelines; // Map to track pipelines by ID
-public:
-    void createPipeline(const Pipeline& currentPipeline);
-    void startPipeline(const std::string& pipelineId);
-    void stopPipeline(const std::string& pipelineId);
-    void pausePipeline(const std::string& pipelineId);
-    void processQueue();
-
-    static void on_pad_added(GstElement* src, GstPad* pad, gpointer data);
-};
-#endif
-
-
 #ifndef PIPELINE_MANAGER_H
 #define PIPELINE_MANAGER_H
 
 #include "PipelineHandler.h"
+#include "MediaStreamDevice.h"
 #include <unordered_map>
 #include <queue>
 #include <thread>
 #include <mutex>
+#include <memory>
+#include <atomic>
+#include <condition_variable>
+#include "Logger.h"
 
-class PipelineManager 
-{
-private:
-    std::unordered_map<size_t, PipelineHandler*> m_pipelineHandlers;
-    std::queue<Pipeline> m_pipelineQueue;
-    std::mutex m_mutex;
-    bool m_running;
-    std::thread m_workerThread;
-
-    void processQueue();
-    void createPipelineInternal(const Pipeline& pipeline);
-
+class PipelineManager {
 public:
+    using PipelineID = uint64_t;
+    
     PipelineManager();
     ~PipelineManager();
+    
+    // Delete copy and move operations
+    PipelineManager(const PipelineManager&) = delete;
+    PipelineManager& operator=(const PipelineManager&) = delete;
+    PipelineManager(PipelineManager&&) = delete;
+    PipelineManager& operator=(PipelineManager&&) = delete;
 
-    void enqueuePipeline(const Pipeline& pipeline);
-    void startPipeline(size_t pipelineID);
-    void pausePipeline(size_t pipelineID);
-    void stopPipeline(size_t pipelineID);
+    // Pipeline management
+    PipelineID createPipeline(const MediaStreamDevice& streamDevice);
+    bool updatePipeline(PipelineID id, const MediaStreamDevice& streamDevice);
+    
+    // Pipeline control operations
+    bool startPipeline(PipelineID id);
+    bool pausePipeline(PipelineID id);
+    bool resumePipeline(PipelineID id);
+    bool stopPipeline(PipelineID id);
+    bool terminatePipeline(PipelineID id);
+    bool isPipelineRunning(PipelineID id) const;
+    
+    // Queue management
+    void enqueueRequest(const MediaStreamDevice& streamDevice);
+    size_t getQueueSize() const;
+    std::vector<PipelineID> getActivePipelines() const;
+
+    // Logger initialization
+    bool initializeLogger(const std::string& loggerPath);
+
+private:
+    static std::atomic<PipelineID> nextPipelineId;
+    using PipelineHandlerPtr = std::unique_ptr<PipelineHandler>;
+    
+    // Member variables
+    std::unordered_map<PipelineID, PipelineHandlerPtr> m_pipelineHandlers;
+    std::queue<MediaStreamDevice> m_requestQueue;
+    mutable std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::atomic<bool> m_running{true};
+    std::thread m_workerThread;
+    std::unique_ptr<Logger> m_logger;
+
+    // Private helper methods
+    void processQueue();
+    PipelineID generateUniquePipelineId() const;
+    bool isPipelineExists(PipelineID id) const;
+    void createPipelineInternal(const MediaStreamDevice& streamDevice);
+    void updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice);
+    bool validatePipelineConfig(const MediaStreamDevice& streamDevice) const;
+    bool canUpdatePipeline(PipelineID id, const MediaStreamDevice& streamDevice) const;
+    bool findMatchingPipeline(const MediaStreamDevice& streamDevice, PipelineID& existingId) const;
 };
 
-#endif  // PIPELINE_MANAGER_H
+#endif // PIPELINE_MANAGER_H

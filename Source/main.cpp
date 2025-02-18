@@ -3,220 +3,180 @@
 #include <atomic>
 #include <random>
 #include <string>
+#include <chrono>
+#include <iostream>
 
-#include "RandomGenerator.h"
-#include "JSONUtils.h"
-#include "XMLUtils.h"
-#include "TQueue.h"
-#include "Logger.h"  
 #include "Pipeline.h"
 #include "MxPipelineManager.h"
-constexpr int arraySize = 10;
-const std::chrono::minutes RUN_DURATION(1);
-std::chrono::steady_clock::time_point start_time;
+#include "MediaStreamDevice.h"
+#include "RandomGenerator.h"
 
-// Thread-safe queues
-TQueue<std::string> stringQueue;
-TQueue<Pipeline> parsedQueue;
+using PipelineID = PipelineManager::PipelineID;
 
-std::mutex parseGeneratedmtx;
-std::mutex processParsedmtx;
-std::condition_variable cvparseGenerate;
-std::condition_variable cvprocessParsed;
-std::atomic<bool> keepRunning(true);  // Atomic flag to control processing thread's running state
-
-// Logger instance for logging output
-Logger logger(Logger::OutputType::Console);  // You can also change to Logger::OutputType::File for file output
-
-// Function to create JSON
-void createJSON(const MediaStreamDevice& device) {
-    std::string jsonString = JSONUtils::CreateJSON(device);
-    logger.log("Generated JSON: \n" + jsonString);  // Log the generated JSON
-}
-
-// Function to create XML
-void createXML(const MediaStreamDevice& device) {
-    std::string xmlString = XMLUtils::CreateXML(device);
-    logger.log("Generated XML: \n" + xmlString);  // Log the generated XML
-}
-
-// Function to print the parsed structure
-void printStructure(const Pipeline &pipeline) {
-    std::ostringstream oss;
-
-    // Printing the Pipeline's basic information
-    oss << "Printing Pipeline Data\n\nPipeline ID: " << pipeline.getPipelineID() << "\n";
-    oss << "Request ID: " << pipeline.getRequestID() << "\n";
-    oss << "Action: " << static_cast<int>(pipeline.getEAction()) << "\n";
-
-    // Printing the MediaStreamDevice data (from the Pipeline)
-    const MediaStreamDevice& device = pipeline.getMediaStreamDevice();
-
-    oss << "\nDevice Name: " << device.sDeviceName << "\n";
-    oss << "Input Source Type: " << static_cast<int>(device.stinputMediaData.esourceType) << "\n";
-    oss << "Input Video Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.evideocodec) << "\n";
-    oss << "Input Audio Codec: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudiocodec) << "\n";
-    oss << "Input Audio Sample Rate: " << static_cast<int>(device.stinputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
-    oss << "Input Container Format: " << static_cast<int>(device.stinputMediaData.stFileSource.econtainerFormat) << "\n";
-    oss << "Input Streaming Protocol: " << static_cast<int>(device.stinputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
-    oss << "Input IP Address: " << device.stinputMediaData.stNetworkStreaming.sIpAddress << "\n";
-    oss << "Input Port: " << device.stinputMediaData.stNetworkStreaming.iPort << "\n";
-    oss << "Input Streaming Type: " << static_cast<int>(device.stinputMediaData.estreamingType) << "\n";
-
-    oss << "Output Source Type: " << static_cast<int>(device.stoutputMediaData.esourceType) << "\n";
-    oss << "Output Video Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.evideocodec) << "\n";
-    oss << "Output Audio Codec: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudiocodec) << "\n";
-    oss << "Output Audio Sample Rate: " << static_cast<int>(device.stoutputMediaData.stMediaCodec.eaudioSampleRate) << "\n";
-    oss << "Output Container Format: " << static_cast<int>(device.stoutputMediaData.stFileSource.econtainerFormat) << "\n";
-    oss << "Output Streaming Protocol: " << static_cast<int>(device.stoutputMediaData.stNetworkStreaming.estreamingProtocol) << "\n";
-    oss << "Output IP Address: " << device.stoutputMediaData.stNetworkStreaming.sIpAddress << "\n";
-    oss << "Output Port: " << device.stoutputMediaData.stNetworkStreaming.iPort << "\n";
-    oss << "Output Streaming Type: " << static_cast<int>(device.stoutputMediaData.estreamingType) << "\n";
+// Helper function to create a test MediaStreamDevice
+MediaStreamDevice createTestDevice(const std::string& rtspUrl, eSourceType sourceType) {
+    MediaStreamDevice device;
     
-    oss << "------------------------------------------------------------------------------------------------------\n";
-    // Log the structure information
-    logger.log(oss.str());
+    // Use setters instead of direct member access
+    device.setName(rtspUrl);
+    device.setSourceType(SourceType::NETWORK);
+    device.setMediaType(MediaType::VIDEO);
+    device.setAddress(rtspUrl);
+    device.setPort(554);  // Standard RTSP port
+    device.setProtocol("rtsp");
+    
+    // Configure input codec
+    MediaCodec inputCodec;
+    inputCodec.type = CodecType::H264;
+    inputCodec.bitrate = 2000000;  // 2 Mbps
+    inputCodec.profile = "high";
+    device.setInputCodec(inputCodec);
+    
+    // Configure output codec (same as input for this example)
+    device.setOutputCodec(inputCodec);
+    
+    // Configure resolution
+    Resolution res;
+    res.width = 1920;
+    res.height = 1080;
+    res.frameRate = 30.0f;
+    device.setResolution(res);
+    
+    return device;
 }
 
-// Parsing thread that takes generated strings and parses them
-void parseGeneratedString() {
-    while (keepRunning) {
-        std::unique_lock<std::mutex> lock(parseGeneratedmtx);
-        
-        // Wait until there is something to process
-        cvparseGenerate.wait(lock, []{ return !stringQueue.isEmpty(); });
-
-        // Get the string from the queue
-        std::string generatedString = stringQueue.dequeue();
-        
-        lock.unlock();  // Unlock the mutex before processing
-
-        //create Pipeline info 
-        Pipeline Pipelinedata;
-        // Parse the string based on its format (JSON or XML)
-        MediaStreamDevice parsedDevice;
-        if (generatedString.substr(0, 1) == "{") {
-            // Parse JSON
-            JSONUtils::ParseJSON(generatedString, parsedDevice);
-
-            //create Pipeline info 
-            Pipelinedata.setPipelineID(RandomGenerator::getRandomValue());
-            Pipelinedata.setRequestID(RandomGenerator::getRandomValue());
-            Pipelinedata.setEAction(RandomGenerator::getRandomAction());
-            Pipelinedata.setMediaStreamDevice(parsedDevice);
-
-            int size = (sizeof(Pipelinedata)/(1024*1024));
-
-            std::cout << "Size of Pipeline Data in MB : " << size << std::endl;
-
-            logger.log("Parsed JSON");  // Log JSON parsing
-        } else if (generatedString.substr(0, 1) == "<") {
-            // Parse XML
-            XMLUtils::ParseXML(generatedString, parsedDevice);
-
-             //create Pipeline info 
-            Pipelinedata.setPipelineID(RandomGenerator::getRandomValue());
-            Pipelinedata.setRequestID(RandomGenerator::getRandomValue());
-            Pipelinedata.setEAction(RandomGenerator::getRandomAction());
-            Pipelinedata.setMediaStreamDevice(parsedDevice);
-
-            logger.log("Parsed XML");  // Log XML parsing
-        } else {
-            logger.log("Unknown string format");  // Log unknown format
-        }
-
-        // Enqueue the parsed structure to parsedQueue
-        parsedQueue.enqueue(Pipelinedata);
-        cvprocessParsed.notify_all();
+// Helper function to print pipeline status
+void printPipelineStatus(const PipelineManager& manager) {
+    auto activePipelines = manager.getActivePipelines();
+    std::cout << "\nActive Pipelines: " << activePipelines.size() << std::endl;
+    for (const auto& id : activePipelines) {
+        std::cout << "Pipeline ID: " << id << " is running" << std::endl;
     }
-}
-
-// Processing thread that processes parsed structures
-void processParsedStructure() {
-    while (keepRunning) {
-        std::unique_lock<std::mutex> lock(processParsedmtx);
-
-        // Wait until there is something to process
-        cvprocessParsed.wait(lock, []{ return !parsedQueue.isEmpty(); });
-
-        // Get the parsed structure from the queue
-        Pipeline Pipelinedata = parsedQueue.dequeue();
-        
-        lock.unlock();  // Unlock the mutex before processing
-
-        // Here you can do any processing you'd like with the structure
-        // For example, print the structure after processing
-        printStructure(Pipelinedata);
-    }
-}
-
-// Task thread that generates random data
-void taskThreadFunction() {
-    start_time = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start_time < RUN_DURATION) {
-        // Sleep for 10 seconds
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        // Generate a random MediaStreamDevice structure
-        MediaStreamDevice generatedDevice = RandomGenerator::generateRandomMediaStreamDevice(rand() % arraySize);
-
-        // Generate a random value between 0 and 1 to choose between XML or JSON
-        int choice = rand() % 2;
-
-        // Based on the random choice, create either XML or JSON
-        std::string generatedString;
-        if (choice == 0) {
-            createXML(generatedDevice);
-            generatedString = XMLUtils::CreateXML(generatedDevice);  // Store the string in generatedString
-        } else {
-            createJSON(generatedDevice);
-            generatedString = JSONUtils::CreateJSON(generatedDevice);  // Store the string in generatedString
-        }
-
-        // Enqueue the generated string to stringQueue
-        stringQueue.enqueue(generatedString);
-        cvparseGenerate.notify_all();  // Notify all threads
-    }
+    std::cout << "Queue Size: " << manager.getQueueSize() << std::endl;
 }
 
 int main()
 {
-    gst_init(nullptr, nullptr);
+    try 
+    {
+        // Create pipeline manager
+        PipelineManager manager;
+        
+        // Initialize logger
+        if (!manager.initializeLogger("pipeline_logger.dll")) 
+        {
+            std::cerr << "Warning: Failed to initialize logger, continuing with default logging" << std::endl;
+        }
+        
+        // Test Case 1: Create and start multiple pipelines
+        std::cout << "\n=== Test Case 1: Creating Multiple Pipelines ===" << std::endl;
+        
+        // Create first pipeline
+        auto device1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
+        auto id1 = manager.createPipeline(device1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        manager.startPipeline(id1);
+        
 
-    PipelineManager manager;
 
-    Pipeline temp;
-    temp.setPipelineID(1);
-    MediaStreamDevice device;
-    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
-    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
-    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
-    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
-    temp.setMediaStreamDevice(device);
+        std::this_thread::sleep_for(std::chrono::milliseconds(21000));
 
-    manager.enqueuePipeline(temp);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-    manager.startPipeline(1);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(30000));
-    Pipeline temp1;
-    temp1.setPipelineID(2);
-    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
-    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
-    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
-    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
-    temp1.setMediaStreamDevice(device);
 
-    manager.enqueuePipeline(temp1);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-    manager.startPipeline(2);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50000));
-    manager.pausePipeline(2);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50000));
-    manager.startPipeline(2);
-    // Keep running
-    std::cout << "Press Enter to stop the pipeline..." << std::endl;
-    std::cin.get();
-    return 0;
+
+
+
+        // Create second pipeline
+        auto device2 = createTestDevice("rtsp://admin:admin@192.168.111.11/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
+        auto id2 = manager.createPipeline(device2);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        manager.startPipeline(id2);
+        
+        printPipelineStatus(manager);
+        
+        // Test Case 2: Pipeline Control Operations
+        std::cout << "\n=== Test Case 2: Pipeline Control Operations ===" << std::endl;
+        
+        // Pause pipeline 1
+        std::cout << "Pausing pipeline " << id1 << std::endl;
+        manager.pausePipeline(id1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        // Resume pipeline 1
+        std::cout << "Resuming pipeline " << id1 << std::endl;
+        manager.resumePipeline(id1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        // Test Case 3: Pipeline Updates
+        std::cout << "\n=== Test Case 3: Pipeline Updates ===" << std::endl;
+        
+        // Update pipeline 2 configuration
+        auto updatedDevice2 = device2;
+        Resolution res = updatedDevice2.resolution();
+        res.width = 1280;
+        res.height = 720;
+        updatedDevice2.setResolution(res);
+        std::cout << "Updating pipeline " << id2 << " configuration" << std::endl;
+        manager.updatePipeline(id2, updatedDevice2);
+        
+        // Test Case 4: Pipeline Termination
+        std::cout << "\n=== Test Case 4: Pipeline Termination ===" << std::endl;
+        
+        // Stop pipeline 1
+        std::cout << "Stopping pipeline " << id1 << std::endl;
+        manager.stopPipeline(id1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        // Terminate pipeline 2
+        std::cout << "Terminating pipeline " << id2 << std::endl;
+        manager.terminatePipeline(id2);
+        
+        printPipelineStatus(manager);
+        
+        // Test Case 5: Error Handling
+        std::cout << "\n=== Test Case 5: Error Handling ===" << std::endl;
+        
+        // Try to start non-existent pipeline
+        std::cout << "Attempting to start non-existent pipeline..." << std::endl;
+        if (!manager.startPipeline(999)) {
+            std::cout << "Successfully handled invalid pipeline ID" << std::endl;
+        }
+        
+        // Test Case 6: Stress Test
+        std::cout << "\n=== Test Case 6: Stress Test ===" << std::endl;
+        
+        // Create multiple pipelines rapidly
+        std::vector<PipelineID> pipelineIds;
+        const int numPipelines = 10;
+        for (int i = 0; i < numPipelines; ++i) {
+            auto stressDevice = createTestDevice(
+                "rtsp://stress" + std::to_string(i) + ".example.com/stream1",
+                eSourceType::SOURCE_TYPE_NETWORK
+            );
+            auto id = manager.createPipeline(stressDevice);
+            pipelineIds.push_back(id);
+            manager.startPipeline(id);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        printPipelineStatus(manager);
+        
+        // Cleanup stress test pipelines
+        for (auto id : pipelineIds) {
+            manager.terminatePipeline(id);
+        }
+        
+        std::cout << "\n=== All tests completed ===" << std::endl;
+        
+        // Wait for user input before exiting
+        std::cout << "\nPress Enter to exit..." << std::endl;
+        std::cin.get();
+        
+        return 0;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        return 1;
+    }
 }

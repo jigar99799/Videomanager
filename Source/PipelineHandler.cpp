@@ -1,254 +1,278 @@
 #include "PipelineHandler.h"
 #include <iostream>
+#include <sstream>
 
-PipelineHandler::PipelineHandler(const Pipeline& pipelineData) : pipelineConfig(pipelineData) {
-    buildPipeline();
+PipelineHandler::PipelineHandler(const MediaStreamDevice& streamDevice)
+    : config(streamDevice) {
+    gst_init(nullptr, nullptr);
+    if (!buildPipeline()) {
+        handleError("Failed to build pipeline");
+    }
 }
 
 PipelineHandler::~PipelineHandler() {
-    stop();
-    gst_object_unref(pipeline);
+    terminate();
 }
 
-void PipelineHandler::on_pad_added(GstElement* src, GstPad* newPad, gpointer data) {
-    PipelineHandler* handler = (PipelineHandler*)data;
-    handler->linkDynamicPad(newPad);
+bool PipelineHandler::buildPipeline() {
+    if (!configurePipeline()) {
+        handleError("Failed to configure pipeline");
+        return false;
+    }
+
+    // No need to connect to demuxer's pad-added signal anymore since we're using rtspsrc
+    // Instead, we're already handling pad-added in configurePipeline()
+
+    // Set pipeline state to PLAYING
+    GstStateChangeReturn ret = gst_element_set_state(elements.pipeline.get(), GST_STATE_PLAYING);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to set pipeline to playing state");
+        return false;
+    }
+
+    return true;
 }
 
-void PipelineHandler::linkDynamicPad(GstPad* newPad) {
-    GstPad* sinkPad = gst_element_get_static_pad(depay, "sink");
-    if (!sinkPad || gst_pad_is_linked(sinkPad)) {
-        gst_object_unref(sinkPad);
-        return;
+bool PipelineHandler::configurePipeline() {
+    // Create GStreamer pipeline using parse_launch for better performance
+    std::string pipeline_str = 
+        "rtspsrc name=source latency=0 ! "
+        "rtph264depay ! "
+        "h264parse ! "
+        "avdec_h264 ! "
+        "videoconvert ! "
+        "glupload ! "
+        "glcolorconvert ! "
+        "glimagesink sync=false async=false";
+        
+    GError* error = nullptr;
+    GstElement* pipeline = gst_parse_launch(pipeline_str.c_str(), &error);
+    
+    if (error) {
+        handleError(std::string("Pipeline creation failed: ") + error->message);
+        g_error_free(error);
+        return false;
     }
-    if (gst_pad_link(newPad, sinkPad) != GST_PAD_LINK_OK) {
-        std::cerr << "Failed to link dynamic pad\n";
-    }
-    else
-    std::cerr << "successfully to link dynamic pad\n";
-    gst_object_unref(sinkPad);
+
+    elements.pipeline.reset(pipeline);
+    
+    // Get pipeline elements by name
+    elements.source.reset(gst_bin_get_by_name(GST_BIN(elements.pipeline.get()), "source"));
+    
+    // Configure RTSP source
+    std::string rtsp_url = "rtsp://" + config.address() + ":" + std::to_string(config.port()) + "/";
+    g_object_set(G_OBJECT(elements.source.get()), 
+                "location", rtsp_url.c_str(),
+                "protocols", 0x00000004, // Force TCP
+                nullptr);
+    
+    return true;
 }
-#define CHECK_ELEMENT(el, name) \
-    if (!el) { \
-        std::cerr << "[ERROR] Failed to create element: " << name << std::endl; \
-        return; \
+
+void PipelineHandler::cleanupPipeline() {
+    if (elements.pipeline) {
+        gst_element_set_state(elements.pipeline.get(), GST_STATE_NULL);
+        elements = GstElements();  // Reset all elements to nullptr
     }
-void PipelineHandler::buildPipeline() 
-{ 
+}
 
-    gst_init(nullptr,nullptr);
-    #if 0
-    std::cerr << " buildpipeline api call\n";
-    pipeline = gst_pipeline_new("pipeline");
-
-    MediaStreamDevice device = pipelineConfig.getMediaStreamDevice();
-    MediaData inputData = device.stinputMediaData;
-    MediaData outputData = device.stoutputMediaData;
-
-    source = gst_element_factory_make("rtspsrc", "source");
-    g_object_set(G_OBJECT(source), "location", device.sDeviceName.c_str(), "protocols", 0x00000004, NULL);
-    g_signal_connect(source, "pad-added", G_CALLBACK(on_pad_added), this);
-
-    if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264) {
-        depay = gst_element_factory_make("rtph264depay", "depay");
-        decoder = gst_element_factory_make("avdec_h264", "decoder");
-    } else if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265) {
-        depay = gst_element_factory_make("rtph265depay", "depay");
-        decoder = gst_element_factory_make("avdec_h265", "decoder");
-    }
-
-    convert = gst_element_factory_make("videoconvert", "convert");
-    sink = gst_element_factory_make("autovideosink", "sink");
-
-    gst_bin_add_many(GST_BIN(pipeline), source, depay, decoder, convert, sink, NULL);
-    gst_element_link_many(depay, decoder, convert, sink, NULL);
-    #endif
-    #if 1
-    std::cerr << " buildpipeline api call\n";
-    pipeline = gst_pipeline_new("pipeline");
-
-
-    // Get input and output configurations from PipelineManager
-    MediaStreamDevice device = pipelineConfig.getMediaStreamDevice();
-    MediaData inputData = device.stinputMediaData;
-    MediaData outputData = device.stoutputMediaData;
-
-    // Step 1: Identify Source Element
-    if (inputData.esourceType == eSourceType::SOURCE_TYPE_FILE) 
-    {
-        source = gst_element_factory_make("filesrc", "source");
-        g_object_set(G_OBJECT(source), "location", device.sDeviceName.c_str(), NULL);
-    } 
-    else if (inputData.esourceType == eSourceType::SOURCE_TYPE_NETWORK) 
-    {
-        source = gst_element_factory_make("rtspsrc", "source");
-        g_object_set(G_OBJECT(source), "location", device.sDeviceName.c_str(), NULL);
-        g_signal_connect(source, "pad-added", G_CALLBACK(on_pad_added), this);
-    } 
-    else 
-    {
-        std::cerr << "Unsupported source type\n";
-        return;
-    }
-
-    // Step 2: Add Depayloader for RTP/RTSP sources
-    if (inputData.esourceType == eSourceType::SOURCE_TYPE_NETWORK)
-    {
-        if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264)
-        {
-            depay = gst_element_factory_make("rtph264depay", "depay");
-        } 
-        else if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265)
-        {
-            depay = gst_element_factory_make("rtph265depay", "depay");
-        }
-    }
-
-    // Step 3: Add Demuxer if Input is a Container Format
-    if (inputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MP4 || 
-        inputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MKV) 
-    {
-        if (inputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MP4)
-        {
-            demuxer = gst_element_factory_make("qtdemux", "demuxer");
-        } else if (inputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MKV)
-        {
-            demuxer = gst_element_factory_make("matroskademux", "demuxer");
-        }
-    }
-
-    // Step 4: Add Parser for Compressed Formats
-    if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264)
-    {
-        parser = gst_element_factory_make("h264parse", "parser");
-    }
-    else if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265)
-    {
-        parser = gst_element_factory_make("h265parse", "parser");
+bool PipelineHandler::start() {
+    std::lock_guard<std::mutex> lock(mtx);
+    
+    if (currentState == State::PLAYING) {
+        return true;
     }
     
-     // Step 5: Add Decoder
-    if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264)
-    {
-        decoder = gst_element_factory_make("avdec_h264", "decoder");
+    GstStateChangeReturn ret = gst_element_set_state(elements.pipeline.get(), GST_STATE_PLAYING);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to start pipeline");
+        return false;
     }
-    else if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265)
-    {
-        decoder = gst_element_factory_make("avdec_h265", "decoder");
-    }
-
-    // Step 6: Add Video Converter
-    convert = gst_element_factory_make("videoconvert", "convert");
-
-    // Step 7: Add Encoder (If Required)
-    if (outputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264) 
-    {
-        encoder = gst_element_factory_make("x264enc", "encoder");
-    }
-    else if (outputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265)
-    {
-        encoder = gst_element_factory_make("x265enc", "encoder");
-    }
-
-    // Step 8: Add Muxer if Output is a Container Format
-    if (outputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MP4)
-    {
-        muxer = gst_element_factory_make("mp4mux", "muxer");
-    } else if (outputData.stFileSource.econtainerFormat == eContainerFormat::CONTAINER_FORMAT_MKV)
-    {
-        muxer = gst_element_factory_make("matroskamux", "muxer");
-    }
-
-    // // Step 9: Add Payloader for Network Streaming
-    // if (outputData.stNetworkStreaming == StreamProtocol::RTP) {
-    //     payloader = gst_element_factory_make("rtph264pay", "payloader");
-    // }
-
-    // Step 10: Identify Sink Element
-    if (outputData.esourceType == eSourceType::SOURCE_TYPE_FILE)
-    {
-        sink = gst_element_factory_make("filesink", "sink");
-      //  g_object_set(G_OBJECT(sink), "location", outputData.sFilePath.c_str(), NULL);
-    }
-    else if (outputData.esourceType == eSourceType::SOURCE_TYPE_NETWORK)
-    {
-        sink = gst_element_factory_make("udpsink", "sink");
-       // g_object_set(G_OBJECT(sink), "host", outputData.sIPAddress.c_str(), "port", outputData.iPort, NULL);
-    } 
-    else {
-        sink = gst_element_factory_make("autovideosink", "sink");
-    }
-
-    // Step 11: Add Elements to the Pipeline
-    gst_bin_add_many(GST_BIN(pipeline), source, NULL);
     
-    if (depay) gst_bin_add(GST_BIN(pipeline), depay);
-    if (demuxer) gst_bin_add(GST_BIN(pipeline), demuxer);
-    if (parser) gst_bin_add(GST_BIN(pipeline), parser);
-    if (decoder) gst_bin_add(GST_BIN(pipeline), decoder);
-    if (convert) gst_bin_add(GST_BIN(pipeline), convert);
-    if (encoder) gst_bin_add(GST_BIN(pipeline), encoder);
-    if (muxer) gst_bin_add(GST_BIN(pipeline), muxer);
-    if (payloader) gst_bin_add(GST_BIN(pipeline), payloader);
-    if (sink) gst_bin_add(GST_BIN(pipeline), sink);
+    currentState = State::PLAYING;
+    if (stateCallback) stateCallback(State::PLAYING);
+    return true;
+}
 
-    // Step 12: Link Elements
-    if (inputData.esourceType == eSourceType::SOURCE_TYPE_NETWORK) {
-        gst_element_link_many(source, depay, decoder, convert, NULL);
-    } else if (inputData.esourceType == eSourceType::SOURCE_TYPE_FILE) {
-        gst_element_link_many(source, demuxer, NULL);
-        g_signal_connect(demuxer, "pad-added", G_CALLBACK(on_pad_added), this);
+bool PipelineHandler::pause() {
+    std::lock_guard<std::mutex> lock(mtx);
+    
+    if (currentState != State::PLAYING) {
+        return false;
     }
-
-    // if (parser) gst_element_link(decoder, parser);
-    // if (encoder) gst_element_link(parser ? parser : decoder, encoder);
-    // if (muxer) gst_element_link(encoder ? encoder : decoder, muxer);
-    // if (payloader) gst_element_link(muxer ? muxer : encoder, payloader);
-    // gst_element_link(payloader ? payloader : muxer ? muxer : encoder ? encoder : decoder, sink);
-
-    gst_bin_add_many(GST_BIN(pipeline), source, depay, decoder, convert, sink, NULL);
-    gst_element_link_many(depay, decoder, convert, sink, NULL);
-    std::cerr << "Pipeline built successfully.\n";
-    #endif
-    /*MediaStreamDevice device = pipelineConfig.getMediaStreamDevice();
-    MediaData inputData = device.stinputMediaData;
-    MediaData outputData = device.stoutputMediaData;
-
-    source = gst_element_factory_make("rtspsrc", "source");
-    g_object_set(G_OBJECT(source), "location", device.sDeviceName.c_str(), "protocols", 0x00000004, NULL);
-    g_signal_connect(source, "pad-added", G_CALLBACK(on_pad_added), this);
-
-    if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H264) {
-        depay = gst_element_factory_make("rtph264depay", "depay");
-        decoder = gst_element_factory_make("avdec_h264", "decoder");
-    } else if (inputData.stMediaCodec.evideocodec == eVideoCodec::VIDEO_CODEC_H265) {
-        depay = gst_element_factory_make("rtph265depay", "depay");
-        decoder = gst_element_factory_make("avdec_h265", "decoder");
+    
+    GstStateChangeReturn ret = gst_element_set_state(elements.pipeline.get(), GST_STATE_PAUSED);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to pause pipeline");
+        return false;
     }
-
-    convert = gst_element_factory_make("videoconvert", "convert");
-    sink = gst_element_factory_make("autovideosink", "sink");
-
-    gst_bin_add_many(GST_BIN(pipeline), source, depay, decoder, convert, sink, NULL);
-    gst_element_link_many(depay, decoder, convert, sink, NULL);*/
+    
+    currentState = State::PAUSED;
+    if (stateCallback) stateCallback(State::PAUSED);
+    return true;
 }
 
-void PipelineHandler::start() {
-    std::cerr << "start pipeline \n";
-    gst_element_set_state(pipeline, GST_STATE_PLAYING);
+bool PipelineHandler::resume() {
+    return start();  // Reuse start logic
 }
 
-void PipelineHandler::pause() {
-    gst_element_set_state(pipeline, GST_STATE_PAUSED);
+bool PipelineHandler::stop() {
+    std::lock_guard<std::mutex> lock(mtx);
+    
+    if (currentState == State::STOPPED) {
+        return true;
+    }
+    
+    GstStateChangeReturn ret = gst_element_set_state(elements.pipeline.get(), GST_STATE_NULL);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to stop pipeline");
+        return false;
+    }
+    
+    currentState = State::STOPPED;
+    if (stateCallback) stateCallback(State::STOPPED);
+    return true;
 }
 
-void PipelineHandler::stop() {
-    gst_element_set_state(pipeline, GST_STATE_NULL);
-}
-
-void PipelineHandler::updatePipeline(const Pipeline& newPipeline) {
+void PipelineHandler::terminate() {
     stop();
-    pipelineConfig = newPipeline;
-    buildPipeline();
-    start();
+    cleanupPipeline();
+}
+
+bool PipelineHandler::updateConfiguration(const MediaStreamDevice& newConfig) {
+    std::lock_guard<std::mutex> lock(mtx);
+    
+    // Store current state
+    State previousState = currentState;
+    
+    // Stop pipeline
+    if (!stop()) {
+        return false;
+    }
+    
+    // Update configuration
+    config = newConfig;
+    
+    // Rebuild pipeline
+    cleanupPipeline();
+    if (!buildPipeline()) {
+        handleError("Failed to rebuild pipeline with new configuration");
+        return false;
+    }
+    
+    // Restore previous state if it was playing or paused
+    if (previousState == State::PLAYING) {
+        return start();
+    } else if (previousState == State::PAUSED) {
+        return pause();
+    }
+    
+    return true;
+}
+
+bool PipelineHandler::isRunning() const {
+    return currentState == State::PLAYING;
+}
+
+PipelineHandler::State PipelineHandler::getState() const {
+    return currentState;
+}
+
+void PipelineHandler::setStateCallback(StateCallback callback) {
+    std::lock_guard<std::mutex> lock(mtx);
+    stateCallback = std::move(callback);
+}
+
+void PipelineHandler::setErrorCallback(ErrorCallback callback) {
+    std::lock_guard<std::mutex> lock(mtx);
+    errorCallback = std::move(callback);
+}
+
+void PipelineHandler::handleError(const std::string& error) {
+    currentState = State::ERROR;
+    if (errorCallback) {
+        errorCallback(error);
+    }
+    std::cerr << "Pipeline error: " << error << std::endl;
+}
+
+void PipelineHandler::onPadAdded(GstElement* element, GstPad* pad, gpointer data) {
+    PipelineHandler* self = static_cast<PipelineHandler*>(data);
+    self->linkDynamicPad(pad);
+}
+
+bool PipelineHandler::linkDynamicPad(GstPad* pad) {
+    GstCaps* caps = gst_pad_get_current_caps(pad);
+    if (!caps) return false;
+    
+    const gchar* str = gst_structure_get_name(gst_caps_get_structure(caps, 0));
+    bool success = false;
+    
+    if (g_str_has_prefix(str, "video/")) {
+        GstPad* sinkpad = gst_element_get_static_pad(elements.parser, "sink");
+        if (sinkpad) {
+            success = (gst_pad_link(pad, sinkpad) == GST_PAD_LINK_OK);
+            gst_object_unref(sinkpad);
+        }
+    }
+    
+    gst_caps_unref(caps);
+    return success;
+}
+
+gboolean PipelineHandler::busCallback(GstBus* bus, GstMessage* msg, gpointer data) {
+    PipelineHandler* handler = static_cast<PipelineHandler*>(data);
+    
+    switch (GST_MESSAGE_TYPE(msg)) {
+        case GST_MESSAGE_ERROR: {
+            GError* err;
+            gchar* debug_info;
+            gst_message_parse_error(msg, &err, &debug_info);
+            handler->handleError(std::string("Pipeline error: ") + err->message);
+            g_error_free(err);
+            g_free(debug_info);
+            break;
+        }
+        case GST_MESSAGE_EOS:
+            handler->handleEndOfStream();
+            break;
+        case GST_MESSAGE_STATE_CHANGED:
+            if (GST_MESSAGE_SRC(msg) == GST_OBJECT(handler->elements.pipeline.get())) {
+                GstState old_state, new_state, pending_state;
+                gst_message_parse_state_changed(msg, &old_state, &new_state, &pending_state);
+                handler->handleStateChange(new_state);
+            }
+            break;
+        default:
+            break;
+    }
+    
+    return TRUE;
+}
+
+// Static pad added handler
+void PipelineHandler::padAddedHandlerStatic(GstElement* src, GstPad* new_pad, gpointer data) {
+    PipelineHandler* handler = static_cast<PipelineHandler*>(data);
+    handler->padAddedHandler(src, new_pad);
+}
+
+// Member pad added handler
+void PipelineHandler::padAddedHandler(GstElement* src, GstPad* new_pad) {
+    GstCaps* new_pad_caps = gst_pad_get_current_caps(new_pad);
+    GstStructure* str = gst_caps_get_structure(new_pad_caps, 0);
+    const gchar* type = gst_structure_get_name(str);
+
+    if (g_str_has_prefix(type, "application/x-rtp")) {
+        GstPad* sink_pad = gst_element_get_static_pad(elements.depay, "sink");
+        
+        if (gst_pad_link(new_pad, sink_pad) != GST_PAD_LINK_OK) {
+            handleError("Failed to link pads");
+        }
+        
+        gst_object_unref(sink_pad);
+    }
+    
+    if (new_pad_caps != nullptr) {
+        gst_caps_unref(new_pad_caps);
+    }
 }

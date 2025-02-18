@@ -3,7 +3,10 @@ enum class eAction {
 	ACTION_NONE =	0,
 	ACTION_CREATE,
 	ACTION_TERMINATE,
-	ACTION_PAUSE
+	ACTION_PAUSE,
+	ACTION_START,
+	ACTION_STOP,
+	ACTION_UPDATE
 };
 
 enum class eSourceType {
