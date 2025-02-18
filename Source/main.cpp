@@ -179,97 +179,44 @@ void taskThreadFunction() {
     }
 }
 
-int main() {
-    // srand(static_cast<unsigned>(time(0))); // Seed the random number generator
+int main()
+{
+    gst_init(nullptr, nullptr);
 
-    // // Create threads
-    // std::thread parsingThread(parseGeneratedString);
-    // std::thread processingThread(processParsedStructure);
-    // std::thread taskThread(taskThreadFunction);
+    PipelineManager manager;
 
-    // // Log start of task execution
-    // logger.log("Task execution started.");
+    Pipeline temp;
+    temp.setPipelineID(1);
+    MediaStreamDevice device;
+    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
+    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
+    temp.setMediaStreamDevice(device);
 
-    // // Join the threads to make sure they complete before exiting
-    // taskThread.join();
+    manager.enqueuePipeline(temp);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+    manager.startPipeline(1);
 
-    // // Once the task thread finishes, stop the parsing and processing threads
-    // keepRunning = false;  // Set the flag to stop the threads
-    // cvparseGenerate.notify_all();  // Wake up the threads to exit
+    std::this_thread::sleep_for(std::chrono::milliseconds(30000));
+    Pipeline temp1;
+    temp1.setPipelineID(2);
+    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
+    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
+    temp1.setMediaStreamDevice(device);
 
+    manager.enqueuePipeline(temp1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+    manager.startPipeline(2);
 
-    // // Join the parsing and processing threads to ensure they finish gracefully
-    // parsingThread.join();
-    
-    // cvprocessParsed.notify_all();
-    // processingThread.join();
-
-    // // Log that the task execution is done
-    // logger.log("Task execution finished. Stopping parsing and processing threads.");
-
-    // // Log that the program has finished
-    // logger.log("Program execution completed.");
-//     CMxPipeManager pipeManager;
-//     Pipeline temp;
-// // Fill source details
-// temp.setPipelineID(1); // Unique ID
-// MediaStreamDevice device;
-// device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
-// device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
-
-// // Fill media codec details
-// device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
-// device.stinputMediaData.stMediaCodec.eaudiocodec = eAudioCodec::AUDIO_CODEC_NONE; // No audio in this case
-
-// // Fill output details (display video)
-// device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
-
-// // Assign to temp pipeline
-// temp.setMediaStreamDevice(device);
-
-// // Create the pipeline
-// pipeManager.createGStreamerPipeline(temp);
-
-// // Start the pipeline (play)
-// pipeManager.startPipeline(1);
-
-
-gst_init(nullptr, nullptr);
-
-PipelineManager manager;
-
-Pipeline temp;
-temp.setPipelineID(1);
-MediaStreamDevice device;
-device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
-device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
-device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
-device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
-temp.setMediaStreamDevice(device);
-
-manager.enqueuePipeline(temp);
-std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-manager.startPipeline(1);
-
-std::this_thread::sleep_for(std::chrono::milliseconds(30000));
-Pipeline temp1;
-temp1.setPipelineID(2);
-device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
-device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
-device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
-device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
-temp1.setMediaStreamDevice(device);
-
-manager.enqueuePipeline(temp1);
-std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-manager.startPipeline(2);
-
-std::this_thread::sleep_for(std::chrono::milliseconds(50000));
-manager.pausePipeline(2);
-std::this_thread::sleep_for(std::chrono::milliseconds(50000));
-manager.startPipeline(2);
-// Keep running
-std::cout << "Press Enter to stop the pipeline..." << std::endl;
-std::cin.get();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50000));
+    manager.pausePipeline(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50000));
+    manager.startPipeline(2);
+    // Keep running
+    std::cout << "Press Enter to stop the pipeline..." << std::endl;
+    std::cin.get();
     return 0;
 }
