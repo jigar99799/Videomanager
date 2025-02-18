@@ -1,47 +1,57 @@
-# Define the compiler
-CXX = g++
+# Directories
+SRC_DIR    := Source
+HDR_DIR    := header
+EXTRA_INC  := include
+BUILD_DIR  := build
+BIN_DIR    := build
+DEPS_INSTALL_DIR := $(CURDIR)/deps/install
 
-# Enable C++17, warnings, and include necessary headers
-CXXFLAGS = -std=c++17 -Wall -I./ -I./header -I/usr/local/include/Poco -pthread \
-           `pkg-config --cflags gstreamer-1.0`
+# Executable name (matching your project name "VideoManager")
+EXECUTABLE := $(BIN_DIR)/VideoManager
 
-# Path to libraries
-POCO_LIB_PATH = /usr/local/lib
+# Compiler and flags
+CXX       := g++
+CXXFLAGS  := -std=c++17 -Wall \
+             -I$(EXTRA_INC) \
+             -I$(HDR_DIR) \
+             -I/usr/local/include/Poco \
+             -I$(DEPS_INSTALL_DIR)/include \
+             -pthread \
+             `pkg-config --cflags gstreamer-1.0 gstreamer-video-1.0 gstreamer-app-1.0`
 
-# Linker flags for Poco and GStreamer
-LDFLAGS = -L$(POCO_LIB_PATH) -lPocoJSON -lPocoXML -lPocoFoundation -pthread \
-          `pkg-config --libs gstreamer-1.0` -lstdc++fs
+# Linker flags: add library paths and link against GStreamer (via pkg-config) and POCO libraries
+LDFLAGS   := -L/usr/local/lib -L$(DEPS_INSTALL_DIR)/lib \
+             -pthread \
+             `pkg-config --libs gstreamer-1.0 gstreamer-video-1.0 gstreamer-app-1.0` \
+             -lPocoFoundation -lPocoNet -lPocoUtil -lPocoXML -lPocoJSON
 
-# Define the source and header files
-SOURCES = source/main.cpp source/JSONUtils.cpp source/XMLUtils.cpp source/Pipeline.cpp source/MxPipelineManager.cpp source/PipelineHandler.cpp
-HEADERS = header/Enum.h header/JSONUtils.h header/Struct.h header/XMLUtils.h header/Pipeline.h header/MxPipelineManager.h header/PipelineHandler.h
+# List of source files (all .cpp files under SRC_DIR)
+CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
-# Object files location (will be placed in build/ directory)
-OBJECTS_DIR = build
-OBJECTS = $(SOURCES:source/%.cpp=$(OBJECTS_DIR)/%.o)
+# (Optional) List of header files (for IDE integration; not used in compilation)
+HDR_FILES   := $(wildcard $(HDR_DIR)/*.h)
 
-# Executable location
-EXEC_DIR = build
-EXEC = $(EXEC_DIR)/my_project_executable
+# Object files: one object per .cpp file, placed in BUILD_DIR with the same base name.
+OBJECTS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(CPP_SOURCES))
 
-# Create necessary directories
-$(shell mkdir -p $(OBJECTS_DIR))
+# Create the build directory if it doesn't exist
+$(shell mkdir -p $(BUILD_DIR))
 
-# Build the target executable
-$(EXEC): $(OBJECTS)
-	$(CXX) $(OBJECTS) -o $(EXEC) $(LDFLAGS)
+# Default target: build the executable
+$(EXECUTABLE): $(OBJECTS)
+	$(CXX) $(OBJECTS) -o $(EXECUTABLE) $(LDFLAGS)
 
-# Compile source files into object files
-$(OBJECTS_DIR)/%.o: source/%.cpp $(HEADERS)
+# Rule to compile .cpp files to .o files.
+# This rule also depends on all header files so that changes to headers trigger recompilation.
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp $(HDR_FILES)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean up build files
+# Clean rule: remove build directory and executable
 clean:
-	rm -rf $(OBJECTS_DIR) $(EXEC)
+	rm -rf $(BUILD_DIR)
 
-# Run the executable
-run: $(EXEC)
-	./$(EXEC)
+# Run rule: build then execute the binary
+run: $(EXECUTABLE)
+	./$(EXECUTABLE)
 
-# Rebuild the project
-rebuild: clean $(EXEC)
+.PHONY: clean run
