@@ -11,10 +11,22 @@
 #include <atomic>
 #include <condition_variable>
 #include "Logger.h"
+#include "Struct.h"
+
+
+using PipelineID = uint64_t;
+
+struct PipelineRequest 
+{
+    PipelineOperation operation;
+    PipelineID id;
+    MediaStreamDevice streamDevice;
+};
+
 
 class PipelineManager {
 public:
-    using PipelineID = uint64_t;
+   
     
     PipelineManager();
     ~PipelineManager();
@@ -25,20 +37,20 @@ public:
     PipelineManager(PipelineManager&&) = delete;
     PipelineManager& operator=(PipelineManager&&) = delete;
 
+    void sendPipelineRequest(PipelineID id, const MediaStreamDevice& config, PipelineOperation op);
+
+
     // Pipeline management
     PipelineID createPipeline(const MediaStreamDevice& streamDevice);
     bool updatePipeline(PipelineID id, const MediaStreamDevice& streamDevice);
     
-    // Pipeline control operations
-    bool startPipeline(PipelineID id);
-    bool pausePipeline(PipelineID id);
-    bool resumePipeline(PipelineID id);
-    bool stopPipeline(PipelineID id);
-    bool terminatePipeline(PipelineID id);
+    
     bool isPipelineRunning(PipelineID id) const;
     
     // Queue management
     void enqueueRequest(const MediaStreamDevice& streamDevice);
+    void enqueuePipelineRequest(const PipelineRequest& request);
+
     size_t getQueueSize() const;
     std::vector<PipelineID> getActivePipelines() const;
 
@@ -52,6 +64,20 @@ private:
     // Member variables
     std::unordered_map<PipelineID, PipelineHandlerPtr> m_pipelineHandlers;
     std::queue<MediaStreamDevice> m_requestQueue;
+
+    std::queue<PipelineRequest> m_pipelinerequest;
+    void processpipelinerequest();
+
+    // Pipeline control operations
+    bool startPipeline(PipelineID id);
+    bool pausePipeline(PipelineID id);
+    bool resumePipeline(PipelineID id);
+    bool stopPipeline(PipelineID id);
+    bool terminatePipeline(PipelineID id);
+
+
+
+
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::atomic<bool> m_running{true};
@@ -59,9 +85,11 @@ private:
 
     // Private helper methods
     void processQueue();
+  
+
     PipelineID generateUniquePipelineId() const;
     bool isPipelineExists(PipelineID id) const;
-    void createPipelineInternal(const MediaStreamDevice& streamDevice);
+    void createPipelineInternal(PipelineID id ,const MediaStreamDevice& streamDevice);
     void updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice);
     bool validatePipelineConfig(const MediaStreamDevice& streamDevice) const;
     bool canUpdatePipeline(PipelineID id, const MediaStreamDevice& streamDevice) const;

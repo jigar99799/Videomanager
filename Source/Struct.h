@@ -5,13 +5,6 @@
 #include <vector>
 #include <string>
 
-// Forward declarations
-enum class SourceType {
-	FILE,
-	NETWORK,
-	DEVICE
-};
-
 enum class MediaType {
 	VIDEO,
 	AUDIO,
@@ -27,6 +20,19 @@ enum class CodecType {
 	MP3,
 	OPUS
 };
+
+enum class PipelineOperation 
+{
+	Create,
+	Update,
+	Run,
+	Start,
+	Stop,
+	Pause,
+	Resume,
+	Terminate
+};
+
 
 struct Resolution {
 	int width{0};
@@ -77,6 +83,22 @@ struct MediaCodec
 		return *this;
 	}
 
+	bool operator==(const MediaCodec& other) const
+	{
+		return (evideocodec == other.evideocodec &&
+				eaudiocodec == other.eaudiocodec &&
+				eaudioSampleRate == other.eaudioSampleRate &&
+				type == other.type &&
+				bitrate == other.bitrate &&
+				profile == other.profile &&
+				preset == other.preset);
+	}
+
+	bool operator!=(const MediaCodec& other) const
+	{
+		return(!(*this == other));
+	}
+
 	~MediaCodec() {}
 };
 
@@ -104,6 +126,18 @@ struct NetworkStreaming
 		}
 		return *this;
 	}
+
+	bool operator==(const NetworkStreaming& other) const
+	{
+		return (estreamingProtocol == other.estreamingProtocol &&
+			sIpAddress == other.sIpAddress &&
+			iPort == other.iPort);
+	}
+
+	bool operator!=(const NetworkStreaming& other) const
+	{
+		return(!(*this == other));
+	}
 };
 
 struct MediaFileSource
@@ -124,6 +158,16 @@ struct MediaFileSource
 			econtainerFormat = other.econtainerFormat;
 		}
 		return *this;
+	}
+
+	bool operator==(const MediaFileSource& other) const
+	{
+		return (econtainerFormat == other.econtainerFormat);
+	}
+
+	bool operator!=(const MediaFileSource& other) const
+	{
+		return(!(*this == other));
 	}
 };
 
@@ -158,6 +202,20 @@ struct MediaData
 		}
 		return *this;
 	}
+
+	bool operator==(const MediaData& other) const
+	{
+		return (esourceType == other.esourceType &&
+			stMediaCodec == other.stMediaCodec &&
+			stFileSource == other.stFileSource &&
+			stNetworkStreaming == other.stNetworkStreaming &&
+			estreamingType == other.estreamingType);
+	}
+	// Overload != operator (Inequality Check)
+	bool operator!=(const MediaData& other) const
+	{
+		return !(*this == other);  // Negate the equality check
+	}
 };
 
 struct MediaStreamDevice
@@ -165,56 +223,19 @@ struct MediaStreamDevice
 	std::string sDeviceName;
 	MediaData stinputMediaData;
 	MediaData stoutputMediaData;
-
-	// New members as private fields
-private:
-	std::string m_name;
-	SourceType m_sourceType{SourceType::NETWORK};
-	MediaType m_mediaType{MediaType::VIDEO};
-	std::string m_address;
-	int m_port{0};
-	std::string m_protocol;
-	MediaCodec m_inputCodec;
-	MediaCodec m_outputCodec;
-	Resolution m_resolution;
-	NetworkConfig m_networkConfig;
-	std::vector<std::string> m_additionalParams;
-	bool m_enableHardwareAcceleration{false};
-	bool m_autoStart{false};
-	int m_reconnectAttempts{3};
-	int m_reconnectDelay{5000};
+	
 
 public:
 	// Getters and setters
-	const std::string& name() const { return m_name; }
-	void setName(const std::string& name) { m_name = name; }
+	const std::string& name() const { return sDeviceName; }
+	void setName(const std::string& name) { sDeviceName = name; }
 	
-	SourceType sourceType() const { return m_sourceType; }
-	void setSourceType(SourceType type) { m_sourceType = type; }
-	
-	MediaType mediaType() const { return m_mediaType; }
-	void setMediaType(MediaType type) { m_mediaType = type; }
-	
-	const std::string& address() const { return m_address; }
-	void setAddress(const std::string& addr) { m_address = addr; }
-	
-	int port() const { return m_port; }
-	void setPort(int port) { m_port = port; }
-	
-	const std::string& protocol() const { return m_protocol; }
-	void setProtocol(const std::string& proto) { m_protocol = proto; }
-	
-	const MediaCodec& inputCodec() const { return m_inputCodec; }
-	MediaCodec& inputCodec() { return m_inputCodec; }
-	void setInputCodec(const MediaCodec& codec) { m_inputCodec = codec; }
-	
-	const MediaCodec& outputCodec() const { return m_outputCodec; }
-	MediaCodec& outputCodec() { return m_outputCodec; }
-	void setOutputCodec(const MediaCodec& codec) { m_outputCodec = codec; }
-	
-	const Resolution& resolution() const { return m_resolution; }
-	Resolution& resolution() { return m_resolution; }
-	void setResolution(const Resolution& res) { m_resolution = res; }
+	const MediaData getinputmediadata() const { return stinputMediaData; }
+	void setinputmediadata(MediaData inputdata) { stinputMediaData = inputdata; }
+
+	const MediaData getoutputmediadata() const { return stoutputMediaData; }
+	void setoutputmediadata(MediaData outdata) { stoutputMediaData = outdata; }
+
 
 	// Default constructor
 	MediaStreamDevice()
@@ -232,22 +253,7 @@ public:
 	MediaStreamDevice(const MediaStreamDevice& other)
 		: sDeviceName(other.sDeviceName)
 		, stinputMediaData(other.stinputMediaData)
-		, stoutputMediaData(other.stoutputMediaData)
-		, m_name(other.m_name)
-		, m_sourceType(other.m_sourceType)
-		, m_mediaType(other.m_mediaType)
-		, m_address(other.m_address)
-		, m_port(other.m_port)
-		, m_protocol(other.m_protocol)
-		, m_inputCodec(other.m_inputCodec)
-		, m_outputCodec(other.m_outputCodec)
-		, m_resolution(other.m_resolution)
-		, m_networkConfig(other.m_networkConfig)
-		, m_additionalParams(other.m_additionalParams)
-		, m_enableHardwareAcceleration(other.m_enableHardwareAcceleration)
-		, m_autoStart(other.m_autoStart)
-		, m_reconnectAttempts(other.m_reconnectAttempts)
-		, m_reconnectDelay(other.m_reconnectDelay) {}
+		, stoutputMediaData(other.stoutputMediaData){}
 
 	// Assignment operator
 	MediaStreamDevice& operator=(const MediaStreamDevice& other) {
@@ -255,37 +261,29 @@ public:
 			sDeviceName = other.sDeviceName;
 			stinputMediaData = other.stinputMediaData;
 			stoutputMediaData = other.stoutputMediaData;
-			m_name = other.m_name;
-			m_sourceType = other.m_sourceType;
-			m_mediaType = other.m_mediaType;
-			m_address = other.m_address;
-			m_port = other.m_port;
-			m_protocol = other.m_protocol;
-			m_inputCodec = other.m_inputCodec;
-			m_outputCodec = other.m_outputCodec;
-			m_resolution = other.m_resolution;
-			m_networkConfig = other.m_networkConfig;
-			m_additionalParams = other.m_additionalParams;
-			m_enableHardwareAcceleration = other.m_enableHardwareAcceleration;
-			m_autoStart = other.m_autoStart;
-			m_reconnectAttempts = other.m_reconnectAttempts;
-			m_reconnectDelay = other.m_reconnectDelay;
 		}
 		return *this;
 	}
 
-	// Additional constructor
-	MediaStreamDevice(const std::string& deviceName, 
-					 SourceType srcType, 
-					 MediaType medType,
-					 const std::string& addr,
-					 int prt,
-					 const std::string& proto)
-		: sDeviceName(deviceName)
-		, m_name(deviceName)
-		, m_sourceType(srcType)
-		, m_mediaType(medType)
-		, m_address(addr)
-		, m_port(prt)
-		, m_protocol(proto) {}
+	bool operator==(const MediaStreamDevice& other) const 
+	{
+		return (sDeviceName == other.sDeviceName &&
+			stinputMediaData == other.stinputMediaData &&
+			stoutputMediaData == other.stoutputMediaData);
+	}
+
+	bool operator!=(const MediaStreamDevice& other) const 
+	{
+		return !(*this == other);
+	}
+
+
+	//// Additional constructor
+	//MediaStreamDevice(const std::string& deviceName, 
+	//				 SourceType srcType, 
+	//				 MediaType medType,
+	//				 const std::string& addr,
+	//				 int prt,
+	//				 const std::string& proto)
+	//	             : sDeviceName(deviceName) {}
 };

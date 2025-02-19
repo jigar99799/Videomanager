@@ -18,11 +18,8 @@ MxLogger& MxLogger::instance()
 
 MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath) 
 {
-    std::cerr << "Initializing MxLogger with config: " << configPath << std::endl;
-
     if (m_hLogger) 
     {
-        std::cerr << "Logger already initialized" << std::endl;
         return MXLOGGER_STATUS_ALLREADY_INITIALIZED;
     }
 
@@ -32,21 +29,19 @@ MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath)
         "./libSpdlog.so",
         "./libSpdlog.so.1",
         "./libSpdlog.so.1.0",
-        "/loggerdll/libSpdlog.so",
+        /*"/loggerdll/libSpdlog.so",
         "/loggerdll/libSpdlog.so.1",
         "/loggerdll/libSpdlog.so.1.0",
         "/usr/local/lib/libSpdlog.so",
         "/usr/local/lib/libSpdlog.so.1",
-        "/usr/local/lib/libSpdlog.so.1.0"
+        "/usr/local/lib/libSpdlog.so.1.0"*/
     };
 
     for (const char* path : libraryPaths) 
     {
-        std::cerr << "Trying to load library from: " << path << std::endl;
         m_hLogger = dlopen(path, RTLD_LAZY);
         if (m_hLogger) 
         {
-            std::cerr << "Successfully loaded library from: " << path << std::endl;
             break;
         }
     }
@@ -63,7 +58,6 @@ MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath)
     }
   
     // Load all function pointers
-    std::cerr << "Loading function pointers..." << std::endl;
     m_loggerInit = (MX_Logger_Initialize)dlsym(m_hLogger, "MX_Logger_Initialize");
     m_loggerWrite = (MX_Logger_WriteFunc)dlsym(m_hLogger, "MX_Logger_Write");
     m_loggerShutdown = (MX_Logger_ShutdownFunc)dlsym(m_hLogger, "MX_Logger_Shutdown");
@@ -72,25 +66,16 @@ MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath)
     if (!m_loggerInit || !m_loggerWrite || !m_loggerShutdown || !m_loggerIsInitialized) 
     {
         std::cerr << "Failed to load one or more function pointers:" << std::endl;
-        std::cerr << "  m_loggerInit: " << (m_loggerInit ? "OK" : "FAILED") << std::endl;
-        std::cerr << "  m_loggerWrite: " << (m_loggerWrite ? "OK" : "FAILED") << std::endl;
-        std::cerr << "  m_loggerShutdown: " << (m_loggerShutdown ? "OK" : "FAILED") << std::endl;
-        std::cerr << "  m_loggerIsInitialized: " << (m_loggerIsInitialized ? "OK" : "FAILED") << std::endl;
         shutdown();
         return MXLOGGER_INIT_FAILED;
     }
-    std::cerr << "All function pointers loaded successfully" << std::endl;
    
     // Call shutdown first in case the logger was not properly shut down previously
     if (m_loggerShutdown) 
     {
-        std::cerr << "Calling shutdown before initialization..." << std::endl;
         m_loggerShutdown();
     }
-
-    std::cerr << "Calling MX_Logger_Initialize..." << std::endl;
     MXLOGGER_STATUS_CODE status = m_loggerInit(configPath);
-    std::cerr << "MX_Logger_Initialize returned status: " << status << std::endl;
     return status;
 }
 
