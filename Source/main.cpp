@@ -63,13 +63,11 @@ int main()
         PipelineManager manager;
         
         // Initialize logger
-        if (!manager.initializeLogger("pipeline_logger.dll")) 
+        if (!manager.initializeLogger("debug_config.json")) 
         {
             std::cerr << "Warning: Failed to initialize logger, continuing with default logging" << std::endl;
         }
         
-        // Test Case 1: Create and start multiple pipelines
-        std::cout << "\n=== Test Case 1: Creating Multiple Pipelines ===" << std::endl;
         
         // Create first pipeline
         auto device1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);

@@ -13,9 +13,11 @@
 // Forward declaration
 struct MediaStreamDevice;
 
-class PipelineHandler {
+class PipelineHandler 
+{
 public:
-    enum class State {
+    enum class State 
+    {
         INITIAL,
         READY,
         PLAYING,
@@ -28,21 +30,35 @@ public:
     using ErrorCallback = std::function<void(const std::string&)>;
 
 private:
-    struct GstElements {
-        using GstDeleter = void(*)(GstElement*);
-        std::unique_ptr<GstElement, GstDeleter> pipeline;
-        std::unique_ptr<GstElement, GstDeleter> source;
-        GstElement* depay{nullptr};
-        GstElement* parser{nullptr};
-        GstElement* decoder{nullptr};
-        GstElement* convert{nullptr};
-        GstElement* glupload{nullptr};
-        GstElement* glcolorconvert{nullptr};
-        GstElement* sink{nullptr};
+    struct GstElements 
+    {
+        GstElement* pipeline    { nullptr };
+        GstElement* source      { nullptr };
+        GstElement* depay       { nullptr };
+        GstElement* demuxer     { nullptr };
+        GstElement* parser      { nullptr };
+        GstElement* decoder     { nullptr };
+        GstElement* muxer       { nullptr };
+        GstElement* payloader   { nullptr };
+        GstElement* encoder     { nullptr };
+        GstElement* convert     { nullptr };
+        GstElement* sink        {   nullptr };
         
-        GstElements() : 
-            pipeline(nullptr, reinterpret_cast<GstDeleter>(gst_object_unref)),
-            source(nullptr, reinterpret_cast<GstDeleter>(gst_object_unref)) {}
+       void reset() 
+        {
+            pipeline   = nullptr;
+            source     = nullptr;
+            depay      = nullptr;
+            demuxer    = nullptr;
+            parser     = nullptr;
+            decoder    = nullptr;
+            muxer      = nullptr;
+            payloader  = nullptr;
+            encoder    = nullptr;
+            convert    = nullptr;
+            sink       = nullptr;
+
+        }
     };
 
     // Pipeline elements and configuration
@@ -63,20 +79,22 @@ private:
     void cleanupPipeline();
     
     // Dynamic pad handling
-    static void onPadAdded(GstElement* element, GstPad* pad, gpointer data);
+    static void on_pad_added(GstElement* element, GstPad* pad, gpointer data);
     bool linkDynamicPad(GstPad* pad);
     
     // Error handling
     void handleError(const std::string& error);
     static gboolean busCallback(GstBus* bus, GstMessage* msg, gpointer data);
 
-    void handleEndOfStream() {
+    void handleEndOfStream() 
+    {
         if (stateCallback) {
             stateCallback(State::STOPPED);
         }
     }
     
-    void handleStateChange(GstState new_state) {
+    void handleStateChange(GstState new_state) 
+    {
         State state;
         switch (new_state) {
             case GST_STATE_PLAYING: state = State::PLAYING; break;

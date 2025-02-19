@@ -3,7 +3,7 @@
 std::string XMLUtils::CreateXML(const MediaStreamDevice& stDevice){
 
     try
-    {
+    { 
         // Create a new XML document
         Poco::AutoPtr<Poco::XML::Document> doc = new Poco::XML::Document;
         Poco::XML::Element* root = doc->createElement("MediaStreamDevice");

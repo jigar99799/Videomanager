@@ -1,0 +1,66 @@
+{
+  "enabled": true,
+  "format": "json",
+  "logQueueCapacity": 200,
+  "messageFormat": {
+    "includeTimestamp": true,
+    "includeThreadId": true,
+    "includeLevel": true,
+    "includeModule": true,
+    "includeFileName": true,
+    "includeFunctionName": true
+  },
+  "logOutput": {
+    "console": {
+      "enabled": true,
+      "colorEnabled": true
+    },
+    "file": {
+      "enabled": true,
+      "path": "/home/jigarpatel/spdlog_test/p1.txt",
+      "rotation": {
+        "enabled": true,
+        "maxSize": "240KB",
+        "maxFiles": 23
+      }
+    },
+    "udp": {
+      "enabled": true,
+      "host": "192.168.27.156",
+      "port": 1025
+    },
+    "http": {
+      "enabled": false,
+      "host": "192.168.27.156",
+      "port": 1025,
+      "endpoint": "/log"
+    }
+  },
+  "moduleLogging": {
+    "decoder": {
+      "enabled": true,
+      "logLevel": "WARN",
+      "moduleFilter": 1
+    },
+    "operation": {
+      "enabled": true,
+      "logLevel": "TRACE",
+      "moduleFilter": 2
+    },
+    "another": {
+      "enabled": true,
+      "logLevel": "TRACE",
+      "moduleFilter": 3
+    },
+    "ankit2": {
+      "enabled": true,
+      "logLevel": "INFO",
+      "moduleFilter": 3
+    },
+    "ankisdfsdfsdt2": {
+      "enabled": true,
+      "logLevel": "INFO",
+      "moduleFilter": 3
+    }
+  }
+}

@@ -43,7 +43,7 @@ public:
     std::vector<PipelineID> getActivePipelines() const;
 
     // Logger initialization
-    bool initializeLogger(const std::string& loggerPath);
+    bool initializeLogger(const char* configPath);
 
 private:
     static std::atomic<PipelineID> nextPipelineId;
@@ -56,7 +56,6 @@ private:
     std::condition_variable m_cv;
     std::atomic<bool> m_running{true};
     std::thread m_workerThread;
-    std::unique_ptr<Logger> m_logger;
 
     // Private helper methods
     void processQueue();

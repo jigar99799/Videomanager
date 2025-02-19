@@ -127,7 +127,8 @@ struct MediaFileSource
 	}
 };
 
-struct MediaData {
+struct MediaData
+{
 	eSourceType esourceType;
 	MediaCodec stMediaCodec;
 	MediaFileSource stFileSource;

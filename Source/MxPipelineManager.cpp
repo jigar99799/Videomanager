@@ -5,6 +5,7 @@
 #include <random>
 #include <sstream>
 #include <atomic>
+#include "mx_logger.h"
 
 // Use the scope resolution operator for PipelineID
 using PipelineID = PipelineManager::PipelineID;
@@ -15,10 +16,6 @@ std::atomic<PipelineID> PipelineManager::nextPipelineId{1};
 // Constructor
 PipelineManager::PipelineManager() : m_running(true) 
 {
-    // Initialize logger
-    m_logger = std::make_unique<Logger>(Logger::OutputType::File, "pipeline_manager.log");
-    m_logger->log("Pipeline Manager initialized");
-    
     // Start the worker thread for processing queue
     m_workerThread = std::thread(&PipelineManager::processQueue, this);
 }
@@ -29,7 +26,8 @@ PipelineManager::~PipelineManager()
     m_running = false;
     m_cv.notify_all();
     
-    if (m_workerThread.joinable()) {
+    if (m_workerThread.joinable()) 
+    {
         m_workerThread.join();
     }
     
@@ -41,7 +39,6 @@ PipelineManager::~PipelineManager()
 // Queue processing
 void PipelineManager::processQueue() 
 {
-
     while (m_running) 
     {
         MediaStreamDevice streamDevice;
@@ -57,31 +54,24 @@ void PipelineManager::processQueue()
             m_requestQueue.pop();
         }
         
-        std::cout << "Getting the first id : "  << std::endl;
-
         // Check for existing matching pipeline
         PipelineID existingId;
         if (findMatchingPipeline(streamDevice, existingId)) 
         {
-            std::cout << "findMatchingPipeline" << std::endl;
-            // Update existing pipeline if needed
+             // Update existing pipeline if needed
             if (canUpdatePipeline(existingId, streamDevice)) 
             {
                 updatePipelineInternal(existingId, streamDevice);
-                m_logger->log("Updated existing pipeline: " + std::to_string(existingId));
+                MX_LOG_INFO("PipelineManager", ("Updated existing pipeline :" + std::to_string(existingId)).c_str());
             }
         } 
         else if (validatePipelineConfig(streamDevice)) 
         {
-
-            std::cout << "validatePipelineConfig: " << std::endl;
-
             createPipelineInternal(streamDevice);
         } 
         else 
         {
-            std::cout << "Invalid pipeline configuration received" << std::endl;
-            m_logger->log("Invalid pipeline configuration received");
+            MX_LOG_ERROR("PipelineManager", "Invalid pipeline configuration received");
         }
     }
 }
@@ -90,18 +80,22 @@ void PipelineManager::processQueue()
 bool PipelineManager::validatePipelineConfig(const MediaStreamDevice& streamDevice) const 
 {
     // Validate source type and network configuration
-    if (streamDevice.sourceType() == SourceType::NETWORK) {
-        if (streamDevice.address().empty() || streamDevice.port() <= 0) {
-            m_logger->log("Invalid network configuration: address or port missing");
+    if (streamDevice.sourceType() == SourceType::NETWORK) 
+    {
+        if (streamDevice.address().empty() || streamDevice.port() <= 0) 
+        {
+            MX_LOG_ERROR("PipelineManager", "Invalid network configuration: address or port missing");
             return false;
         }
     }
     
     // Validate codec configuration
     const MediaCodec& inputCodec = streamDevice.inputCodec();
-    if (inputCodec.type == CodecType::H264 || inputCodec.type == CodecType::H265) {
-        if (inputCodec.bitrate <= 0) {
-            m_logger->log("Invalid codec configuration: bitrate not set");
+    if (inputCodec.type == CodecType::H264 || inputCodec.type == CodecType::H265) 
+    {
+        if (inputCodec.bitrate <= 0) 
+        {
+            MX_LOG_ERROR("PipelineManager", "Invalid codec configuration: bitrate not set");
             return false;
         }
     }
@@ -122,7 +116,7 @@ bool PipelineManager::canUpdatePipeline(PipelineID id, const MediaStreamDevice& 
     const MediaStreamDevice& existingConfig = it->second->getConfig();
     if (existingConfig.sourceType() != streamDevice.sourceType()) 
     {
-        m_logger->log("Cannot update pipeline: source type mismatch");
+        MX_LOG_ERROR("PipelineManager", "Cannot update pipeline: source type mismatch");
         return false;
     }
     
@@ -130,7 +124,8 @@ bool PipelineManager::canUpdatePipeline(PipelineID id, const MediaStreamDevice& 
 }
 
 // Pipeline ID generation
-PipelineID PipelineManager::generateUniquePipelineId() const {
+PipelineID PipelineManager::generateUniquePipelineId() const 
+{
     // Generate sequential IDs starting from 1
     return nextPipelineId.fetch_add(1, std::memory_order_relaxed);
 }
@@ -144,15 +139,9 @@ bool PipelineManager::isPipelineExists(PipelineID id) const
 // Pipeline creation and update methods
 void PipelineManager::createPipelineInternal(const MediaStreamDevice& streamDevice) 
 {
-
-
-
-    
     PipelineID id = generateUniquePipelineId();
 
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    std::cout << "createPipelineInternal generateUniquePipelineId id = " << id <<std::endl;
 
     auto handler = std::make_unique<PipelineHandler>(streamDevice);
     
@@ -167,16 +156,17 @@ void PipelineManager::createPipelineInternal(const MediaStreamDevice& streamDevi
             case PipelineHandler::State::STOPPED: stateStr = "STOPPED"; break;
             default: stateStr = "UNKNOWN"; break;
         }
-        m_logger->log("Pipeline " + std::to_string(id) + " state changed to: " + stateStr);
+        MX_LOG_INFO("PipelineManager", ("Pipeline " + std::to_string(id) + " state changed to: " + stateStr).c_str());
     });
     
     handler->setErrorCallback([this, id](const std::string& error) 
     {
-        m_logger->log("Pipeline " + std::to_string(id) + " error: " + error);
+        MX_LOG_ERROR("PipelineManager", ("Pipeline " + std::to_string(id) + " error " + error).c_str());
     });
     
     m_pipelineHandlers[id] = std::move(handler);
-    m_logger->log("Created pipeline with ID: " + std::to_string(id));
+
+    MX_LOG_TRACE("PipelineManager", ("Created pipeline with ID" + std::to_string(id)).c_str());
 }
 
 void PipelineManager::updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice) 
@@ -185,10 +175,13 @@ void PipelineManager::updatePipelineInternal(PipelineID id, const MediaStreamDev
     
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
-        if (it->second->updateConfiguration(streamDevice)) {
-            m_logger->log("Successfully updated pipeline: " + std::to_string(id));
-        } else {
-            m_logger->log("Failed to update pipeline: " + std::to_string(id));
+        if (it->second->updateConfiguration(streamDevice)) 
+        {
+            MX_LOG_TRACE("PipelineManager", ("Successfully updated pipeline: " + std::to_string(id)).c_str());
+        } 
+        else 
+        {
+            MX_LOG_ERROR("PipelineManager", ("Failed to update pipeline: " + std::to_string(id)).c_str());
         }
     }
 }
@@ -198,7 +191,6 @@ PipelineID PipelineManager::createPipeline(const MediaStreamDevice& streamDevice
 {
     PipelineID id = generateUniquePipelineId();
     enqueueRequest(streamDevice);
-    std::cout << "createPipeline DOne 1" << std::endl;
     return id;
 }
 
@@ -224,6 +216,7 @@ bool PipelineManager::startPipeline(PipelineID id)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
+        MX_LOG_TRACE("PipelineManager", ("start Pipeline: " + std::to_string(id)).c_str());
         return it->second->start();
     }
     return false;
@@ -234,6 +227,7 @@ bool PipelineManager::pausePipeline(PipelineID id)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
+        MX_LOG_TRACE("PipelineManager", ("pause Pipeline: " + std::to_string(id)).c_str());
         return it->second->pause();
     }
     return false;
@@ -244,6 +238,7 @@ bool PipelineManager::resumePipeline(PipelineID id)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
+        MX_LOG_TRACE("PipelineManager", ("resume Pipeline: " + std::to_string(id)).c_str());
         return it->second->resume();
     }
     return false;
@@ -254,7 +249,8 @@ bool PipelineManager::stopPipeline(PipelineID id)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
-        if (it->second->stop()) 
+        MX_LOG_TRACE("PipelineManager", ("stop Pipeline: " + std::to_string(id)).c_str());
+        if (it->second->stop())
         {
             m_pipelineHandlers.erase(it);
             return true;
@@ -268,6 +264,7 @@ bool PipelineManager::terminatePipeline(PipelineID id)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
+        MX_LOG_TRACE("PipelineManager", ("terminate Pipeline: " + std::to_string(id)).c_str());
         it->second->terminate();
         m_pipelineHandlers.erase(it);
         return true;
@@ -281,6 +278,7 @@ bool PipelineManager::isPipelineRunning(PipelineID id) const
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end()) 
     {
+        MX_LOG_TRACE("PipelineManager", ("Pipeline is running ID: " + std::to_string(id)).c_str());
         return it->second->isRunning();
     }
     return false;
@@ -307,27 +305,25 @@ size_t PipelineManager::getQueueSize() const
 }
 
 // Logger initialization
-bool PipelineManager::initializeLogger(const std::string& loggerPath) 
+bool PipelineManager::initializeLogger(const char* configPath )
 {
     try 
     {
-        // TODO: Implement DLL loading logic
-        /* Example pseudo-code for future implementation:
-        HMODULE hDLL = LoadLibrary(loggerPath.c_str());
-        if (hDLL) {
-            auto initFunc = GetProcAddress(hDLL, "InitializeLogger");
-            auto logFunc = GetProcAddress(hDLL, "LogMessage");
-            // Initialize logger with configuration
-        }
-        */
+        MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(configPath);
         
-        m_logger->log("Logger DLL initialized successfully");
+        if (status != MXLOGGER_INIT_SUCCESSFULLY && status != MXLOGGER_STATUS_ALLREADY_INITIALIZED) 
+        {
+            std::cerr << "Warning: Failed to initialize logger with status" << status << std::endl;
+            return false;
+        }
+
+        MX_LOG_TRACE("PipelineManager", "logger DLL initialized successfully");
+
         return true;
     } 
     catch (const std::exception& e) 
     {
-        std::cerr << "Failed to initialize logger: " << e.what() << std::endl;
-        return false;
+      return false;
     }
 }
 
@@ -335,7 +331,8 @@ bool PipelineManager::findMatchingPipeline(const MediaStreamDevice& streamDevice
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    for (const auto& [id, handler] : m_pipelineHandlers) {
+    for (const auto& [id, handler] : m_pipelineHandlers) 
+    {
         const MediaStreamDevice& existingConfig = handler->getConfig();
         
         if (existingConfig.sourceType() == streamDevice.sourceType() &&
@@ -344,9 +341,11 @@ bool PipelineManager::findMatchingPipeline(const MediaStreamDevice& streamDevice
             existingConfig.port() == streamDevice.port()) {
             
             outId = id;
+            MX_LOG_TRACE("PipelineManager", ("matching pipeline found ID: " + std::to_string(outId)).c_str());
             return true;
         }
     }
     
+    MX_LOG_TRACE("PipelineManager", ("matching pipeline not found for ID: " + std::to_string(outId)).c_str());
     return false;
 }
