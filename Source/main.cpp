@@ -12,6 +12,7 @@
 #include "RandomGenerator.h"
 
 
+
 // Helper function to create a test MediaStreamDevice
 MediaStreamDevice createTestDevice(const std::string& rtspUrl, eSourceType sourceType) 
 {
@@ -45,18 +46,25 @@ void printPipelineStatus(const PipelineManager& manager) {
 
 int main()
 {
+
+
+    // socket + parse 
+
+    // callback
+
     try 
     {
         // Create pipeline manager
         PipelineManager manager;
-        
+        manager.initializemanager();
+
         // Initialize logger
-        if (!manager.initializeLogger("debug_config.json")) 
+        if (!manager.initializeLogger("debug_config.json"))
         {
-            std::cerr << "Warning: Failed to initialize logger, continuing with default logging" << std::endl;
+            std::cerr << "Warning: Failed to initialize pipeline manager" << std::endl;
         }
         
-        
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Create first pipeline
         auto device1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
        
@@ -68,11 +76,23 @@ int main()
         
         std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
+        manager.sendPipelineRequest(id1,device1,PipelineOperation::Start);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
         manager.sendPipelineRequest(id1,device1,PipelineOperation::Pause);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
-        manager.sendPipelineRequest(id1,device1,PipelineOperation::Resume);
+        manager.sendPipelineRequest(id1, device1, PipelineOperation::Resume);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
+        manager.sendPipelineRequest(id1, device1, PipelineOperation::Terminate);
+       // manager.sendPipelineRequest(id1, device1, PipelineOperation::Stop);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
 
 
 

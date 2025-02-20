@@ -8,7 +8,7 @@
 #include <shared_mutex>  
 #include <mutex>    
 
-#define DEFAULTQUEUESIZE 4
+#define DEFAULTQUEUESIZE 500
 
 // Template definition with a non-type template parameter (iMaxSize) of type size_t
 template <typename T, size_t iMaxSize = DEFAULTQUEUESIZE>  

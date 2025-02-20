@@ -1,32 +1,37 @@
-#ifndef PIPELINE_H
-#define PIPELINE_H
+#ifndef PIPELINEREQUEST_H
+#define PIPELINEREQUEST_H
 
-#include "Struct.h"  
+#include "Struct.h"
 
-class Pipeline 
+class PipelineRequest
 {
 public:
     size_t m_uiPipelineID;
     size_t m_uiRequestID;
     eAction m_eAction;
     MediaStreamDevice m_stMediaStreamDevice;
-    char arr[2*1024*1024];
 
 public:
     // Default constructor
-    Pipeline();
+    PipelineRequest();
 
     // Parameterized constructor
-    Pipeline(size_t pipelineID, size_t requestID, eAction action, const MediaStreamDevice& mediaStreamDevice);
+    PipelineRequest(size_t pipelineID, size_t requestID, eAction action, const MediaStreamDevice& mediaStreamDevice);
 
     // Copy constructor
-    Pipeline(const Pipeline& other);
+    PipelineRequest(const PipelineRequest& other);
+
+    // Move constructor
+    PipelineRequest(PipelineRequest&& other) noexcept;
 
     // Assignment operator
-    Pipeline& operator=(const Pipeline& other);
+    PipelineRequest& operator=(const PipelineRequest& other);
+
+    // Move assignment operator
+    PipelineRequest& operator=(PipelineRequest&& other) noexcept;
 
     // Destructor
-    ~Pipeline();
+    ~PipelineRequest();
 
     // Getter and Setter functions
     inline size_t getPipelineID() const { return m_uiPipelineID; }
@@ -38,8 +43,8 @@ public:
     inline eAction getEAction() const { return m_eAction; }
     inline void setEAction(eAction action) { m_eAction = action; }
 
-    inline MediaStreamDevice getMediaStreamDevice() const { return m_stMediaStreamDevice; }
+    inline const MediaStreamDevice& getMediaStreamDevice() const { return m_stMediaStreamDevice; }
     inline void setMediaStreamDevice(const MediaStreamDevice& mediaStreamDevice) { m_stMediaStreamDevice = mediaStreamDevice; }
 };
 
-#endif // PIPELINE_H
+#endif // PIPELINEREQUEST_H
