@@ -192,10 +192,20 @@ bool PipelineHandler::configurePipeline()
 
 void PipelineHandler::cleanupPipeline() 
 {
-    if (elements.pipeline) 
+     if (elements.pipeline) 
     {
+        // First set the state to NULL to ensure proper cleanup
+        gst_element_set_state(elements.pipeline, GST_STATE_NULL);
+        
+        // Wait for the state change to complete
+        gst_element_get_state(elements.pipeline, nullptr, nullptr, GST_CLOCK_TIME_NONE);
+        
+        // Now we can safely unref the pipeline
+        // This will automatically handle cleanup of child elements
         gst_object_unref(elements.pipeline);
-        elements.reset();  // Reset all elements to nullptr
+        
+        // Reset all element pointers to nullptr
+        elements.reset();
     }
 }
 

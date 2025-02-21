@@ -16,6 +16,7 @@ PipelineManager::PipelineManager()
 // Destructor
 PipelineManager::~PipelineManager() 
 {
+    MX_LOG_TRACE("PipelineManager", "pipe line process shutdown start");
     stopworkerthread();
 
     // Clear all pipelines
@@ -231,7 +232,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_RUN:
             {
                 PipelineID  existingId;
-                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can't create new just starting ID :" + std::to_string(existingId)).c_str());
                     // TODO : what to do blindlly start 
@@ -246,7 +247,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_START:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can create first and then start  :" + std::to_string(existingId)).c_str());
                     createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());

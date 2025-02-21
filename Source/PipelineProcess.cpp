@@ -1,34 +1,35 @@
 #include "PipelineProcess.h"
 
 // Define static members
-std::unique_ptr<PipelineProcess> PipelineProcess::s_instance = nullptr;
+std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>> PipelineProcess::s_instance = nullptr;
 std::mutex PipelineProcess::s_mutex;
+std::once_flag PipelineProcess::s_onceFlag;
 std::condition_variable PipelineProcess::m_cvEventQueue;
 processCallback PipelineProcess::m_processCallbackfn = nullptr;
+std::atomic<bool> PipelineProcess::g_processrunning = true;
 
 PipelineProcess& PipelineProcess::getInstance()
 {
-    if (!s_instance)
-    {
-        std::lock_guard<std::mutex> lock(s_mutex);
-        s_instance = std::unique_ptr<PipelineProcess>(new PipelineProcess());
-    }
+    std::call_once(s_onceFlag, []() 
+        {
+        s_instance.reset(new PipelineProcess());
+        });
     return *s_instance;
 }
 
 void PipelineProcess::processEvents()
 {
-    while (g_running)
+    while (g_processrunning)
     {
         try
         {
             std::unique_lock<std::mutex> lock(s_mutex);
             m_cvEventQueue.wait(lock, [this]
                 {
-                    return !g_running || !getInstance().m_eventQueue || !getInstance().m_eventQueue->isEmpty();
+                    return !g_processrunning || !getInstance().m_eventQueue || !getInstance().m_eventQueue->isEmpty();
                 });
 
-            if (!g_running || !getInstance().m_eventQueue) 
+            if (!g_processrunning || !getInstance().m_eventQueue)
                 break; // Safeguard shutdown
 
             PipelineRequest request = getInstance().m_eventQueue->dequeue();
@@ -56,14 +57,14 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
         }
 
         // Ensures the instance is created
-        getInstance();
+        PipelineProcess& pipelineinstance = getInstance(); 
 
         std::lock_guard<std::mutex> lock(s_mutex);
 
-        //set callback 
+        //set callback F
         m_processCallbackfn = std::move(callback);
 
-#pragma region Logger_init
+//Logger_init
         // Initialize logger first
 
         MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(debugconfigPath);
@@ -78,25 +79,24 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
         else
             MX_LOG_INFO("PipelineProcess", "Logger initialized successfully");
 
-#pragma endregion Logger_init
 
-#pragma region pipeline_manager_init
+
+//pipeline_manager_init
 
         // Create pipeline manager
-        getInstance().m_pipelineManager = std::make_unique<PipelineManager>();
-        getInstance().m_pipelineManager->initializemanager();
+        pipelineinstance.m_pipelineManager = std::make_unique<PipelineManager>();
+        pipelineinstance.m_pipelineManager->initializemanager();
 
         MX_LOG_INFO("PipelineProcess", "Pipeline manager initialized");
 
-#pragma endregion pipeline_manager_init
 
-#pragma region event_queue_init
+
+//event_queue_init
         
         // Create event queue
-        getInstance().m_eventQueue = std::make_unique<TQueue<PipelineRequest>>();
+        pipelineinstance.m_eventQueue = std::make_unique<TQueue<PipelineRequest>>();
         MX_LOG_INFO("PipelineProcess", "Event queue initialized");
 
-#pragma endregion event_queue_init
 
         return true;
     }
@@ -111,9 +111,11 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
 
 void PipelineProcess::shutdown()
 {
+    MX_LOG_TRACE("PipelineProcess", "pipe line process shutdown start");
+
     {
         std::lock_guard<std::mutex> lock(s_mutex); // Ensure thread safety
-        g_running = false;
+        g_processrunning = false;
         m_cvEventQueue.notify_all();
     }
 
@@ -128,6 +130,7 @@ void PipelineProcess::shutdown()
         getInstance().m_pipelineManager.reset();
         MxLogger::instance().shutdown();
     }
+    s_instance.reset();  // Cleanup singleton
 }
 
 void PipelineProcess::enqueueRequest(const PipelineRequest& request)

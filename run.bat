@@ -1,3 +1,6 @@
-rm -rf build
+rm -f build/*.o build/vdeoManager
 make
-./build/VideoManager
+sleep 5
+cd build
+./VideoManager
+cd ..

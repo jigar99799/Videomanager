@@ -14,7 +14,7 @@ PipelineRequest createTestDevice(const std::string& rtspUrl, eSourceType sourceT
     i++;
     request.setPipelineID(i); 
     request.setRequestID(i); 
-    request.setEAction(eAction::ACTION_CREATE);
+    request.setEAction(eAction::ACTION_RUN);
 
     MediaStreamDevice device;
     device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
@@ -67,7 +67,6 @@ PipelineRequest StartTestDevice(const std::string& rtspUrl, eSourceType sourceTy
 //}
 
 
-
 void actualcallback(MXPIPELINE_PROCESS_STATUS_CODE, std::string status)
 {
 
@@ -85,7 +84,7 @@ int main()
         }
 
 
-        while (g_running) 
+        while (true) 
         {
             // Here you would typically:
             // 1. Listen for socket connections
@@ -95,9 +94,16 @@ int main()
 
             PipelineRequest request1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
 
-
             PipelineProcess::enqueueRequest(request1);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200000));
+
+           /* PipelineRequest request2 = StartTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
+
+            PipelineProcess::enqueueRequest(request2);*/
+
+            std::this_thread::sleep_for(std::chrono::seconds(200));
+
+            std::cerr << "Failed to initialize pipeline process" << std::endl;
+            //PipelineProcess::shutdown();
         }
 
         // Cleanup
