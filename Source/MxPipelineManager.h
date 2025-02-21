@@ -62,21 +62,18 @@ private:
     bool stopPipeline(PipelineID id);
     bool terminatePipeline(PipelineID id);
 
-    // generate Pipeline ID
-    PipelineID generatePipelineId() const;
+    //// generate Pipeline ID
+    //PipelineID generatePipelineId() const;
 
 public:
     
     PipelineManager();
     ~PipelineManager();
 
-    // Logger initialization
-    bool initializeLogger(const char* configPath);
-
     // Pipeline initialization 
     void initializemanager();
 
-    PipelineID createPipeline     (const MediaStreamDevice& streamDevice);
+    //void       createPipeline     (const PipelineRequest& request);
     void       sendPipelineRequest(PipelineRequest incommingrequest);
 
     // Delete copy and move operations

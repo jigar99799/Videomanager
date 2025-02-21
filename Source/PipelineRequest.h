@@ -5,7 +5,6 @@
 
 class PipelineRequest
 {
-public:
     size_t m_uiPipelineID;
     size_t m_uiRequestID;
     eAction m_eAction;

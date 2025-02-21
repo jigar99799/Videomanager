@@ -25,10 +25,11 @@ void PipelineProcess::processEvents()
             std::unique_lock<std::mutex> lock(s_mutex);
             m_cvEventQueue.wait(lock, [this]
                 {
-                    return !g_running || !getInstance().m_eventQueue->isEmpty();
+                    return !g_running || !getInstance().m_eventQueue || !getInstance().m_eventQueue->isEmpty();
                 });
 
-            if (!g_running) break;
+            if (!g_running || !getInstance().m_eventQueue) 
+                break; // Safeguard shutdown
 
             PipelineRequest request = getInstance().m_eventQueue->dequeue();
             getInstance().m_pipelineManager->sendPipelineRequest(request);
@@ -39,7 +40,6 @@ void PipelineProcess::processEvents()
         {
             MX_LOG_ERROR("PipelineProcess", ("Error processing event: " + std::string(e.what())).c_str());
         }
-
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
@@ -49,6 +49,12 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
 {
     try 
     {
+        if (s_instance)
+        {
+            MX_LOG_INFO("PipelineProcess", "PipelineProcess allready init");
+            return true;
+        }
+
         // Ensures the instance is created
         getInstance();
 
@@ -96,6 +102,8 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
     }
     catch (const std::exception& e) 
     {
+        if (m_processCallbackfn)
+            m_processCallbackfn(MXPIPELINE_PROCESS_LOGGER_INIT_FAILED, "Initialization failed :" + std::string(e.what()));
         MX_LOG_ERROR("PipelineProcess", ("Initialization failed: " + std::string(e.what())).c_str());
         return false;
     }
@@ -103,18 +111,23 @@ bool PipelineProcess::initialize(const char* debugconfigPath, processCallback ca
 
 void PipelineProcess::shutdown()
 {
-    g_running = false;
-    m_cvEventQueue.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(s_mutex); // Ensure thread safety
+        g_running = false;
+        m_cvEventQueue.notify_all();
+    }
 
     if (getInstance().m_processingThread.joinable())
     {
         getInstance().m_processingThread.join();
     }
 
-    getInstance().m_eventQueue.reset();
-    getInstance().m_pipelineManager.reset();
-
-    MX_LOG_INFO("PipelineProcess", "Pipeline process shutdown complete");
+    {
+        std::lock_guard<std::mutex> lock(s_mutex); // Ensure cleanup  thread-safe
+        getInstance().m_eventQueue.reset();
+        getInstance().m_pipelineManager.reset();
+        MxLogger::instance().shutdown();
+    }
 }
 
 void PipelineProcess::enqueueRequest(const PipelineRequest& request)

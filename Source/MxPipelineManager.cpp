@@ -7,9 +7,6 @@
 #include <atomic>
 #include "mx_logger.h"
 
-// Add this at the top of the file with other static members
-std::atomic<PipelineID> PipelineManager::nextPipelineId{1};
-
 // Constructor
 PipelineManager::PipelineManager() 
 {
@@ -33,56 +30,29 @@ void PipelineManager::initializemanager()
     startworkerthread();
 }
 
-bool PipelineManager::initializeLogger(const char* configPath)
-{
-    try
-    {
-        MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(configPath);
-
-        if (status != MXLOGGER_INIT_SUCCESSFULLY && status != MXLOGGER_STATUS_ALLREADY_INITIALIZED)
-        {
-            std::cerr << "Warning: Failed to initialize logger with status" << status << std::endl;
-            return false;
-        }
-
-        MX_LOG_TRACE("PipelineManager", "logger DLL initialized successfully");
-
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        return false;
-    }
-}
-
-PipelineID PipelineManager::generatePipelineId() const
-{
-    // Generate sequential IDs starting from 1
-    return nextPipelineId.fetch_add(1, std::memory_order_relaxed);
-}
+//PipelineID PipelineManager::generatePipelineId() const
+//{
+//    // Generate sequential IDs starting from 1
+//    return nextPipelineId.fetch_add(1, std::memory_order_relaxed);
+//}
 
 ///////////////////////////////////////////////    Pipeline Interface   //////////////////////////////////////////
 
-PipelineID PipelineManager::createPipeline(const MediaStreamDevice& streamDevice)
-{
-    // Generate new ID and create pipeline immediately
-    PipelineID id = generatePipelineId();
-    try
-    {
-        // Create a request with both ID and stream device
-        PipelineRequest request{ PipelineOperation::Create, id, streamDevice };
-
-        enqueuePipelineRequest(request);
-
-        MX_LOG_INFO("PipelineManager", ("enqueue pipeline ID: " + std::to_string(id) + " for device: " + streamDevice.name()).c_str());
-        return id;
-    }
-    catch (const std::exception& e)
-    {
-        MX_LOG_ERROR("PipelineHandler", ("failed to create pipeline: " + streamDevice.sDeviceName + e.what()).c_str());
-        throw;
-    }
-}
+//void PipelineManager::createPipeline(const PipelineRequest& request)
+//{
+//    try
+//    {
+//        enqueuePipelineRequest(request);
+//
+//        MX_LOG_INFO("PipelineManager", ("enqueue pipeline ID: " + std::to_string(request.getPipelineID()) + " for device: " + request.getMediaStreamDevice().name()).c_str());
+//        return ;
+//    }
+//    catch (const std::exception& e)
+//    {
+//        MX_LOG_ERROR("PipelineHandler", ("failed to create pipeline: " + request.getMediaStreamDevice().name() + e.what()).c_str());
+//        throw;
+//    }
+//}
 
 void PipelineManager::sendPipelineRequest(PipelineRequest incommingrequest)
 {
@@ -215,87 +185,93 @@ void PipelineManager::processpipelinerequest()
             request = m_pipelinerequest.dequeue();
         }
 
-        if (request.operation == PipelineOperation::Create ||
-            request.operation == PipelineOperation::Update ||
-            request.operation == PipelineOperation::Run)
+        if (request.getEAction() == eAction::ACTION_CREATE ||
+            request.getEAction() == eAction::ACTION_UPDATE ||
+            request.getEAction() == eAction::ACTION_START)
         {
-            if (!validatePipelineConfig(request.streamDevice))
+            if (!validatePipelineConfig(request.getMediaStreamDevice()))
             {
-                MX_LOG_ERROR("PipelineManager", ("invalid configuration received for device :" + request.streamDevice.name()).c_str());
+                MX_LOG_ERROR("PipelineManager", ("invalid configuration received for device :" + request.getMediaStreamDevice().name()).c_str());
                 continue;
             }
         }
 
         try
         {
-            switch (request.operation)
+            switch (request.getEAction())
             {
-            case PipelineOperation::Create:
+            case eAction::ACTION_CREATE:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.streamDevice, existingId))
+                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can't created :" + std::to_string(existingId)).c_str());
                     // TODO : what to do blindlly created or return 
                     break;
                 }
-                createPipelineInternal(request.id, request.streamDevice);
+                createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
                 break;
             }
-            case PipelineOperation::Update:
+            case eAction::ACTION_UPDATE:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.streamDevice, existingId))
+                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
                 {
-                    MX_LOG_INFO("PipelineManager", ("match same pipeline mot found while updatating for device :" + request.streamDevice.name()).c_str());
+                    MX_LOG_INFO("PipelineManager", ("match same pipeline not found while updatating for device :" + request.getMediaStreamDevice().name()).c_str());
                     // TODO : what to do blindlly created or return 
                     break;
                 }
 
-                if (canUpdatePipeline(existingId, request.streamDevice))
+                if (canUpdatePipeline(existingId, request.getMediaStreamDevice()))
                 {
-                    updatePipelineInternal(request.id, request.streamDevice);
+                    updatePipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
                 }
                 break;
             }
-            case PipelineOperation::Run:
+            case eAction::ACTION_RUN:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.streamDevice, existingId))
+                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can't create new just starting ID :" + std::to_string(existingId)).c_str());
                     // TODO : what to do blindlly start 
-                    startPipeline(request.id);
+                    startPipeline(request.getPipelineID());
 
                     break;
                 }
-                createPipelineInternal(request.id, request.streamDevice);
-                startPipeline(request.id);
+                createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
+                startPipeline(request.getPipelineID());
                 break;
             }
-            case PipelineOperation::Start:
+            case eAction::ACTION_START:
             {
-                startPipeline(request.id);
+                PipelineID  existingId;
+                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                {
+                    MX_LOG_INFO("PipelineManager", ("match same pipeline so can create first and then start  :" + std::to_string(existingId)).c_str());
+                    createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
+                }
+                startPipeline(request.getPipelineID());
                 break;
             }
-            case PipelineOperation::Stop:
+            case eAction::ACTION_STOP:
             {
-                stopPipeline(request.id);
+                stopPipeline(request.getPipelineID());
                 break;
             }
-            case PipelineOperation::Pause:
+            case eAction::ACTION_PAUSE:
             {
-                pausePipeline(request.id);
+                pausePipeline(request.getPipelineID());
                 break;
             }
-            case PipelineOperation::Resume:
+            case eAction::ACTION_RESUME:
             {
-                resumePipeline(request.id);
+                resumePipeline(request.getPipelineID());
                 break;
             }
-            case PipelineOperation::Terminate:
+            case eAction::ACTION_TERMINATE:
             {
-                terminatePipeline(request.id);
+                terminatePipeline(request.getPipelineID());
                 break;
             }
             default :
@@ -304,7 +280,7 @@ void PipelineManager::processpipelinerequest()
         }
         catch (const std::exception& e)
         {
-            MX_LOG_ERROR("PipelineHandler", ("failed to create pipeline:" + request.streamDevice.name() + e.what()).c_str());
+            MX_LOG_ERROR("PipelineHandler", ("failed to create pipeline:" + request.getMediaStreamDevice().name() + e.what()).c_str());
         }
     }
 
