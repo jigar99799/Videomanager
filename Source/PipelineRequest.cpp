@@ -12,7 +12,7 @@ PipelineRequest::PipelineRequest(size_t pipelineID, size_t requestID, eAction ac
 {
 
 }
-
+ 
 // Copy constructor
 PipelineRequest::PipelineRequest(const PipelineRequest& other)
     : m_uiPipelineID(other.m_uiPipelineID),
