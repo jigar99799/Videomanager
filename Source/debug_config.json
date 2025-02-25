@@ -17,7 +17,7 @@
     },
     "file": {
       "enabled": true,
-      "path": "/home/jigarpatel/spdlog_test/p1.txt",
+      "path": "/home/jigarpatel/spdlog_test/alag.txt",
       "rotation": {
         "enabled": true,
         "maxSize": "240KB",

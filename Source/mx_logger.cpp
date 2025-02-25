@@ -75,6 +75,7 @@ MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath)
     {
         m_loggerShutdown();
     }
+
     MXLOGGER_STATUS_CODE status = m_loggerInit(configPath);
     return status;
 }
@@ -110,18 +111,28 @@ void MxLogger::shutdown()
 }
 
 void MxLogger::write(LOGLEVEL level, const char* module, const char* message,
-                    const char* file, const char* function, int line) 
+                    const char* file, const char* function, int line,const char* threadId) 
 {
     static int messageCount = 0;
     messageCount++;
     
     if (m_loggerWrite) {
-        m_loggerWrite(level, module, message, file, function, line);
+        m_loggerWrite(level, module, message, file, function, line,threadId);
     } 
     else 
     {
         std::cerr << "Error: Logger write function is not initialized" << std::endl;
     }
+}
+
+const char* MxLogger::getCurrentThreadId()
+{
+	static thread_local std::string tls_threadIdStr;
+	std::stringstream ss;
+	ss << std::this_thread::get_id();
+	tls_threadIdStr = ss.str();
+
+	return tls_threadIdStr.c_str();
 }
 
 bool MxLogger::isValid() const 
