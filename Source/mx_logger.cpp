@@ -29,10 +29,10 @@ MXLOGGER_STATUS_CODE MxLogger::initialize(const char* configPath)
         "./libSpdlog.so",
         "./libSpdlog.so.1",
         "./libSpdlog.so.1.0",
-        /*"/loggerdll/libSpdlog.so",
+        "/loggerdll/libSpdlog.so",
         "/loggerdll/libSpdlog.so.1",
         "/loggerdll/libSpdlog.so.1.0",
-        "/usr/local/lib/libSpdlog.so",
+        /*"/usr/local/lib/libSpdlog.so",
         "/usr/local/lib/libSpdlog.so.1",
         "/usr/local/lib/libSpdlog.so.1.0"*/
     };
@@ -90,7 +90,6 @@ void MxLogger::shutdown()
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             try 
             {
-
                 m_loggerShutdown();
                 // Add another small delay before closing the library
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -116,7 +115,8 @@ void MxLogger::write(LOGLEVEL level, const char* module, const char* message,
     static int messageCount = 0;
     messageCount++;
     
-    if (m_loggerWrite) {
+    if (m_loggerWrite) 
+    {
         m_loggerWrite(level, module, message, file, function, line,threadId);
     } 
     else 

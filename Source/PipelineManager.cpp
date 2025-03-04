@@ -1,4 +1,4 @@
-#include "MxPipelineManager.h"
+#include "PipelineManager.h"
 #include "MediaStreamDevice.h"
 #include <iostream>
 #include <chrono>
@@ -10,17 +10,17 @@
 // Constructor
 PipelineManager::PipelineManager() 
 {
-   
+   // for time being no need to init here 
 }
 
 // Destructor
 PipelineManager::~PipelineManager() 
 {
-    MX_LOG_TRACE("PipelineManager", "pipe line process shutdown start");
+    MX_LOG_TRACE("PipelineManager", "pipeline process shutdown start");
     stopworkerthread();
 
     // Clear all pipelines
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     m_pipelineHandlers.clear();
 }
 
@@ -31,30 +31,6 @@ void PipelineManager::initializemanager()
     startworkerthread();
 }
 
-//PipelineID PipelineManager::generatePipelineId() const
-//{
-//    // Generate sequential IDs starting from 1
-//    return nextPipelineId.fetch_add(1, std::memory_order_relaxed);
-//}
-
-///////////////////////////////////////////////    Pipeline Interface   //////////////////////////////////////////
-
-//void PipelineManager::createPipeline(const PipelineRequest& request)
-//{
-//    try
-//    {
-//        enqueuePipelineRequest(request);
-//
-//        MX_LOG_INFO("PipelineManager", ("enqueue pipeline ID: " + std::to_string(request.getPipelineID()) + " for device: " + request.getMediaStreamDevice().name()).c_str());
-//        return ;
-//    }
-//    catch (const std::exception& e)
-//    {
-//        MX_LOG_ERROR("PipelineHandler", ("failed to create pipeline: " + request.getMediaStreamDevice().name() + e.what()).c_str());
-//        throw;
-//    }
-//}
-
 void PipelineManager::sendPipelineRequest(PipelineRequest incommingrequest)
 {
     enqueuePipelineRequest(incommingrequest);
@@ -62,34 +38,34 @@ void PipelineManager::sendPipelineRequest(PipelineRequest incommingrequest)
 
 ///////////////////////////////////////////////    Pipeline comparison   //////////////////////////////////////////
 
-bool PipelineManager::findMatchingPipeline(const MediaStreamDevice& streamDevice, PipelineID& outId) const
+bool PipelineManager::findMatchingpipeline(const MediaStreamDevice& streamDevice, PipelineID& existingId)
 {
     // TODO : check all data ?? 
-    std::lock_guard<std::mutex> lock(m_mutex);
-
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
+    
     for (const auto& [id, handler] : m_pipelineHandlers)
     {
         const MediaStreamDevice& existingConfig = handler->getConfig();
-
+        
+        // Compare the essential properties
         if (existingConfig.getinputmediadata().esourceType == streamDevice.getinputmediadata().esourceType &&
             existingConfig.getinputmediadata().stMediaCodec == existingConfig.getinputmediadata().stMediaCodec &&
             existingConfig.getinputmediadata().stNetworkStreaming.sIpAddress == streamDevice.getinputmediadata().stNetworkStreaming.sIpAddress &&
             existingConfig.getinputmediadata().stNetworkStreaming.iPort == streamDevice.getinputmediadata().stNetworkStreaming.iPort)
         {
-
-            outId = id;
-            MX_LOG_TRACE("PipelineManager", ("matching pipeline found ID: " + std::to_string(outId)).c_str());
+            existingId = id;
+            MX_LOG_TRACE("PipelineManager", ("matching pipeline found ID: " + std::to_string(existingId)).c_str());
             return true;
         }
     }
-
+    
     MX_LOG_TRACE("PipelineManager", ("matching pipeline not found for devide : " + streamDevice.name()).c_str());
     return false;
 }
 
-bool PipelineManager::validatePipelineConfig(const MediaStreamDevice& streamDevice) const
+bool PipelineManager::validatepipelineConfig(const MediaStreamDevice& streamDevice) const
 {
-    // Validate source type and network configuration
+    // TODO : Validate source type and network configuration or more ??
     if (streamDevice.getinputmediadata().esourceType == eSourceType::SOURCE_TYPE_NETWORK)
     {
         if (streamDevice.getinputmediadata().stNetworkStreaming.sIpAddress.empty() || streamDevice.getinputmediadata().stNetworkStreaming.iPort <= 0)
@@ -112,16 +88,16 @@ bool PipelineManager::validatePipelineConfig(const MediaStreamDevice& streamDevi
     return true;
 }
 
-bool PipelineManager::isPipelineExists(PipelineID id) const
+bool PipelineManager::ispipelineexists(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     return m_pipelineHandlers.find(id) != m_pipelineHandlers.end();
 }
 
-bool PipelineManager::canUpdatePipeline(PipelineID id, const MediaStreamDevice& streamDevice) const
+bool PipelineManager::canUpdatePipeline(PipelineID id, const MediaStreamDevice& streamDevice)
 {
     // TODO  : what to allow and what not to
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
 
     auto it = m_pipelineHandlers.find(id);
     if (it == m_pipelineHandlers.end())
@@ -161,10 +137,22 @@ void PipelineManager::stopworkerthread()
 void PipelineManager::enqueuePipelineRequest(const PipelineRequest& request)
 {
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::mutex> lock(m_pipemangermutex);
         m_pipelinerequest.enqueue(request);
     }
     m_cv.notify_one();
+    
+    // TODO : Does this need to inform ? 
+    // Notify that request was received
+    if (m_callback) 
+    {
+        m_callback(
+            PipelineStatus::InProgress,
+            request.getPipelineID(),
+            request.getRequestID(),
+            "Request received by manager"
+        );
+    }
 }
 
 void PipelineManager::processpipelinerequest()
@@ -175,7 +163,7 @@ void PipelineManager::processpipelinerequest()
     {
         PipelineRequest request;
         {
-            std::unique_lock<std::mutex> lock(m_mutex);
+            std::unique_lock<std::mutex> lock(m_pipemangermutex);
             m_cv.wait(lock, [this]
                 {
                     return !m_running || !m_pipelinerequest.isEmpty();
@@ -190,7 +178,7 @@ void PipelineManager::processpipelinerequest()
             request.getEAction() == eAction::ACTION_UPDATE ||
             request.getEAction() == eAction::ACTION_START)
         {
-            if (!validatePipelineConfig(request.getMediaStreamDevice()))
+            if (!validatepipelineConfig(request.getMediaStreamDevice()))
             {
                 MX_LOG_ERROR("PipelineManager", ("invalid configuration received for device :" + request.getMediaStreamDevice().name()).c_str());
                 continue;
@@ -204,7 +192,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_CREATE:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (findMatchingpipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can't created :" + std::to_string(existingId)).c_str());
                     // TODO : what to do blindlly created or return 
@@ -216,7 +204,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_UPDATE:
             {
                 PipelineID  existingId;
-                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (!findMatchingpipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline not found while updatating for device :" + request.getMediaStreamDevice().name()).c_str());
                     // TODO : what to do blindlly created or return 
@@ -232,7 +220,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_RUN:
             {
                 PipelineID  existingId;
-                if (findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (findMatchingpipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can't create new just starting ID :" + std::to_string(existingId)).c_str());
                     // TODO : what to do blindlly start 
@@ -247,7 +235,7 @@ void PipelineManager::processpipelinerequest()
             case eAction::ACTION_START:
             {
                 PipelineID  existingId;
-                if (!findMatchingPipeline(request.getMediaStreamDevice(), existingId))
+                if (!findMatchingpipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can create first and then start  :" + std::to_string(existingId)).c_str());
                     createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
@@ -293,37 +281,46 @@ void PipelineManager::processpipelinerequest()
 
 void PipelineManager::createPipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
 
-    auto handler = std::make_unique<PipelineHandler>(streamDevice);
+    try {
+        // Create a new pipeline handler
+        auto handler = std::make_unique<PipelineHandler>(streamDevice);
 
-    // Set callbacks
-    handler->setStateCallback([this, id](PipelineHandler::State state)
-        {
-            std::string stateStr;
-            switch (state)
-            {
-            case PipelineHandler::State::PLAYING: stateStr = "PLAYING"; break;
-            case PipelineHandler::State::PAUSED: stateStr = "PAUSED"; break;
-            case PipelineHandler::State::STOPPED: stateStr = "STOPPED"; break;
-            default: stateStr = "UNKNOWN"; break;
-            }
-            MX_LOG_INFO("PipelineManager", ("Pipeline " + std::to_string(id) + " state changed to: " + stateStr).c_str());
-        });
+        // Set the pipeline ID
+        handler->setPipelineId(id);
 
-    handler->setErrorCallback([this, id](const std::string& error)
-        {
-            MX_LOG_ERROR("PipelineManager", ("Pipeline " + std::to_string(id) + " error " + error).c_str());
-        });
+        // Set unified callback instead of separate state and error callbacks
+        handler->setCallback(
+            std::bind(&PipelineManager::onHandlerCallback, 
+                     this,
+                     std::placeholders::_1,
+                     std::placeholders::_2,
+                     std::placeholders::_3,
+                     std::placeholders::_4));
 
-    m_pipelineHandlers[id] = std::move(handler);
+        // Store the handler
+        m_pipelineHandlers[id] = std::move(handler);
 
-    MX_LOG_TRACE("PipelineManager", ("Created pipeline with ID" + std::to_string(id)).c_str());
+        MX_LOG_TRACE("PipelineManager", ("Created pipeline with ID: " + std::to_string(id)).c_str());
+    } catch (const std::exception& e) {
+        // Report error
+        if (m_callback) {
+            m_callback(
+                PipelineStatus::Error,
+                id,
+                0, // No request ID available
+                std::string("Failed to create pipeline: ") + e.what()
+            );
+        }
+        
+        throw; // Re-throw to be caught by the caller
+    }
 }
 
 void PipelineManager::updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
 
     auto it = m_pipelineHandlers.find(id);
     if (it != m_pipelineHandlers.end())
@@ -341,7 +338,7 @@ void PipelineManager::updatePipelineInternal(PipelineID id, const MediaStreamDev
 
 bool PipelineManager::startPipeline(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("start Pipeline: " + std::to_string(id)).c_str());
@@ -352,7 +349,7 @@ bool PipelineManager::startPipeline(PipelineID id)
 
 bool PipelineManager::pausePipeline(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("pause Pipeline: " + std::to_string(id)).c_str());
@@ -363,7 +360,7 @@ bool PipelineManager::pausePipeline(PipelineID id)
 
 bool PipelineManager::resumePipeline(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("resume Pipeline: " + std::to_string(id)).c_str());
@@ -374,7 +371,7 @@ bool PipelineManager::resumePipeline(PipelineID id)
 
 bool PipelineManager::stopPipeline(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("stop Pipeline: " + std::to_string(id)).c_str());
@@ -389,7 +386,7 @@ bool PipelineManager::stopPipeline(PipelineID id)
 
 bool PipelineManager::terminatePipeline(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("terminate Pipeline: " + std::to_string(id)).c_str());
@@ -400,12 +397,10 @@ bool PipelineManager::terminatePipeline(PipelineID id)
     return false;
 }
 
-
-
 ///////////////////////////////////////////////   Pipeline Status queries  //////////////////////////////////////////
-bool PipelineManager::isPipelineRunning(PipelineID id) const
+bool PipelineManager::isPipelineRunning(PipelineID id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     if (auto it = m_pipelineHandlers.find(id); it != m_pipelineHandlers.end())
     {
         MX_LOG_TRACE("PipelineManager", ("Pipeline is running ID: " + std::to_string(id)).c_str());
@@ -414,9 +409,9 @@ bool PipelineManager::isPipelineRunning(PipelineID id) const
     return false;
 }
 
-std::vector<PipelineID> PipelineManager::getActivePipelines() const 
+std::vector<PipelineID> PipelineManager::getActivePipelines()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     std::vector<PipelineID> activePipelines;
     for (const auto& [id, handler] : m_pipelineHandlers) 
     {
@@ -428,8 +423,8 @@ std::vector<PipelineID> PipelineManager::getActivePipelines() const
     return activePipelines;
 }
 
-size_t PipelineManager::getQueueSize() const 
+size_t PipelineManager::getQueueSize()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_pipemangermutex);
     return m_pipelinerequest.size();
 }

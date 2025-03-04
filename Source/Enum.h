@@ -74,3 +74,18 @@ enum class eContainerFormat
 	CONTAINER_FORMAT_MOV,
 	CONTAINER_FORMAT_WebM
 };
+
+// Pipeline status enum to represent both normal status and errors
+enum class PipelineStatus
+{
+	Success,            // Operation completed successfully
+	InProgress,         // Operation is in progress
+	Information,         // Operation is informed
+	Error,              // General error occurred
+	NetworkError,       // Network-related error
+	ConfigError,        // Configuration error
+	ResourceError,      // Resource allocation/deallocation error
+	Timeout,            // Operation timed out
+	EndofStreamReceived,            // Operation timed out
+	Cancelled           // Operation was cancelled
+};

@@ -5,7 +5,7 @@ std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>> Pipeline
 std::mutex PipelineProcess::s_mutex;
 std::once_flag PipelineProcess::s_onceFlag;
 std::condition_variable PipelineProcess::m_cvEventQueue;
-processCallback PipelineProcess::m_processCallbackfn = nullptr;
+PipelineCallback PipelineProcess::m_callback = nullptr;
 std::atomic<bool> PipelineProcess::g_processrunning = true;
 
 PipelineProcess& PipelineProcess::getInstance()
@@ -15,6 +15,91 @@ PipelineProcess& PipelineProcess::getInstance()
         s_instance.reset(new PipelineProcess());
         });
     return *s_instance;
+}
+
+bool PipelineProcess::initialize(const char* debugconfigPath, PipelineCallback callback)
+{
+    try
+    {
+        if (s_instance)
+        {
+            MX_LOG_INFO("PipelineProcess", "PipelineProcess allready init");
+            return true;
+        }
+
+        // Initialize GStreamer in the main thread
+        MX_LOG_TRACE("PipelineProcess", "Initializing GStreamer");
+        gst_init(nullptr, nullptr);
+
+        // set callback
+        m_callback = std::move(callback);
+
+        // Get the singleton instance
+        PipelineProcess& instance = getInstance();
+
+       
+        // Step :1 init the Logger 
+
+        MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(debugconfigPath);
+        if (status != MXLOGGER_INIT_SUCCESSFULLY && status != MXLOGGER_STATUS_ALLREADY_INITIALIZED)
+        {
+            onManagerCallback(PipelineStatus::Information,
+                0,  // No specific pipeline ID for initialization
+                0,  // No specific request ID for initialization
+                "Pipeline logger initialized failed ");
+            
+            // TODO : this failed is not important 
+           //return false;
+        }
+        else
+        {
+            MX_LOG_INFO("PipelineProcess", "Logger initialized successfully");
+        }
+       
+        // Step :2 Create and init the Pipeline Manager 
+        instance.m_pipelineManager = std::make_unique<PipelineManager>();
+
+        if (instance.m_pipelineManager == NULL)
+        {
+            MX_LOG_TRACE("PipelineProcess", "Pipeline manager creation failed");
+            PipelineErrorcallback("Pipeline manager creation failed");
+            return false;
+        }
+
+        instance.m_pipelineManager->initializemanager();
+
+        // Set up the manager callback
+        instance.m_pipelineManager->setManagerCallback(
+            std::bind(&PipelineProcess::onManagerCallback, 
+                     std::placeholders::_1,
+                     std::placeholders::_2,
+                     std::placeholders::_3,
+                     std::placeholders::_4));
+
+        // Step 3 : start the worker thread for processing the incomming request
+        instance.m_processingThread = std::thread(&PipelineProcess::processEvents, &instance);
+        g_processrunning = true;
+
+        // Create event queue
+        instance.m_eventQueue = std::make_unique<TQueue<PipelineRequest>>();
+        MX_LOG_INFO("PipelineProcess", "Event queue initialized");
+
+        onManagerCallback(PipelineStatus::Success,
+                          0,  // No specific pipeline ID for initialization
+                          0,  // No specific request ID for initialization
+                          "Pipeline process initialized successfully");
+
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        onManagerCallback(PipelineStatus::Error,
+            0, 
+            0, 
+            std::string("Failed to initialize pipeline process: ") + e.what());
+
+        return false;
+    }
 }
 
 void PipelineProcess::processEvents()
@@ -29,100 +114,65 @@ void PipelineProcess::processEvents()
                     return !g_processrunning || !getInstance().m_eventQueue || !getInstance().m_eventQueue->isEmpty();
                 });
 
-            if (!g_processrunning || !getInstance().m_eventQueue)
-                break; // Safeguard shutdown
+            if (!g_processrunning)
+                break;
 
-            PipelineRequest request = getInstance().m_eventQueue->dequeue();
-            getInstance().m_pipelineManager->sendPipelineRequest(request);
-
-            MX_LOG_INFO("PipelineProcess", ("Processing request for pipeline: " + std::to_string(request.getPipelineID())).c_str());
+            if (getInstance().m_eventQueue && !getInstance().m_eventQueue->isEmpty())
+            {
+                PipelineRequest request = getInstance().m_eventQueue->dequeue();
+                getInstance().m_pipelineManager->sendPipelineRequest(request);
+            }
         }
         catch (const std::exception& e)
         {
-            MX_LOG_ERROR("PipelineProcess", ("Error processing event: " + std::string(e.what())).c_str());
+            PipelineErrorcallback(std::string("Exception in process thread: ") + e.what());
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
-
-bool PipelineProcess::initialize(const char* debugconfigPath, processCallback callback)
+void PipelineProcess::enqueueRequest(const PipelineRequest& request)
 {
-    try 
+    try
     {
-        if (s_instance)
-        {
-            MX_LOG_INFO("PipelineProcess", "PipelineProcess allready init");
-            return true;
-        }
+        getInstance().m_eventQueue->enqueue(request);
+        m_cvEventQueue.notify_one();
 
-        // Ensures the instance is created
-        PipelineProcess& pipelineinstance = getInstance(); 
+        // Notify request enqueued
+        onManagerCallback(
+            PipelineStatus::InProgress,
+            request.getPipelineID(),
+            request.getRequestID(),
+            "Request enqueued for processing");
 
-        std::lock_guard<std::mutex> lock(s_mutex);
-
-        //set callback F
-        m_processCallbackfn = std::move(callback);
-
-//Logger_init
-        // Initialize logger first
-
-        MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(debugconfigPath);
-        if (status != MXLOGGER_INIT_SUCCESSFULLY && status != MXLOGGER_STATUS_ALLREADY_INITIALIZED)
-        {
-            if (m_processCallbackfn)
-                m_processCallbackfn(MXPIPELINE_PROCESS_LOGGER_INIT_FAILED, "with failed status :" + std::to_string((int)status));
-
-            // TODO : this failed is not important 
-           //return false;
-        }
-        else
-            MX_LOG_INFO("PipelineProcess", "Logger initialized successfully");
-
-
-
-//pipeline_manager_init
-
-        // Create pipeline manager
-        pipelineinstance.m_pipelineManager = std::make_unique<PipelineManager>();
-        pipelineinstance.m_pipelineManager->initializemanager();
-
-        MX_LOG_INFO("PipelineProcess", "Pipeline manager initialized");
-
-
-
-//event_queue_init
-        
-        // Create event queue
-        pipelineinstance.m_eventQueue = std::make_unique<TQueue<PipelineRequest>>();
-        MX_LOG_INFO("PipelineProcess", "Event queue initialized");
-
-
-        return true;
     }
-    catch (const std::exception& e) 
+    catch (const std::exception& e)
     {
-        if (m_processCallbackfn)
-            m_processCallbackfn(MXPIPELINE_PROCESS_LOGGER_INIT_FAILED, "Initialization failed :" + std::string(e.what()));
-        MX_LOG_ERROR("PipelineProcess", ("Initialization failed: " + std::string(e.what())).c_str());
-        return false;
+        PipelineErrorcallback(std::string("Failed to enqueue request: ") + e.what());
     }
 }
+
 
 void PipelineProcess::shutdown()
 {
-    MX_LOG_TRACE("PipelineProcess", "pipe line process shutdown start");
+    MX_LOG_TRACE("PipelineProcess", "Shutting down pipeline process");
 
+    // Signal the processing thread to stop
     {
         std::lock_guard<std::mutex> lock(s_mutex); // Ensure thread safety
         g_processrunning = false;
         m_cvEventQueue.notify_all();
     }
 
-    if (getInstance().m_processingThread.joinable())
+    // Wait for the processing thread to finish
+    if (s_instance && s_instance->m_processingThread.joinable())
     {
-        getInstance().m_processingThread.join();
+        s_instance->m_processingThread.join();
     }
+
+    PipelineProcess::onManagerCallback(PipelineStatus::Success,
+        0,  // No specific pipeline ID for shutdown
+        0,  // No specific request ID for shutdown
+        "Pipeline process shut down successfully");
 
     {
         std::lock_guard<std::mutex> lock(s_mutex); // Ensure cleanup  thread-safe
@@ -133,13 +183,23 @@ void PipelineProcess::shutdown()
     s_instance.reset();  // Cleanup singleton
 }
 
-void PipelineProcess::enqueueRequest(const PipelineRequest& request)
+void PipelineProcess::setCallback(PipelineCallback callback)
 {
-    if (getInstance().m_eventQueue)
+    m_callback = callback;
+}
+
+void PipelineProcess::PipelineErrorcallback(const std::string& error)
+{
+    MX_LOG_ERROR("PipelineProcess", ("Pipeline error: " + error ).c_str());
+    
+    // Forward the error to the callback if set
+    if (m_callback)
     {
-        std::lock_guard<std::mutex> lock(s_mutex);
-        getInstance().m_eventQueue->enqueue(request);
-        MX_LOG_TRACE("PipelineProcess", ("Request enqueued for pipeline: " + std::to_string(request.getPipelineID())).c_str());
+        m_callback(
+            PipelineStatus::Error,
+            0,  // We may not know which pipeline caused the error
+            0,  // We may not know which request caused the error
+            error
+        );
     }
-    m_cvEventQueue.notify_one();
 }

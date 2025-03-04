@@ -1,0 +1,21 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vscode
+/build/ErrorHandlingExample.o
+/build/libSpdlog.so
+/build/libSpdlog.so.1
+/build/main.o
+/build/MxPipelineManager.o
+/build/mx_logger.o
+/build/PipelineHandler.o
+/build/PipelineProcess.o
+/build/VideoManager
+/loggerdll/libSpdlog.so
+/loggerdll/libSpdlog.so.1
+/loggerdll/libSpdlog.so.1.0
+/visualstudio_code
+/CMakeLists.txt
+/Source/MxPipelineManager.cpp
+/Source/MxPipelineManager.h

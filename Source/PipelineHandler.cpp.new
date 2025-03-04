@@ -1,0 +1,339 @@
+#include "PipelineHandler.h"
+#include <iostream>
+#include <sstream>
+
+PipelineHandler::PipelineHandler(const MediaStreamDevice& streamDevice)
+    : config(streamDevice), m_state(State::INITIAL)
+{
+    gst_init(nullptr, nullptr);
+
+    if (!buildPipeline()) 
+    {
+        handleError("Failed to build pipeline");
+    }
+}
+
+PipelineHandler::~PipelineHandler() 
+{
+    terminate();
+}
+
+bool PipelineHandler::buildPipeline() 
+{
+    if (!configurePipeline()) 
+    {
+        return false;
+    }
+    return true;
+}
+
+bool PipelineHandler::configurePipeline() 
+{
+    MediaStreamDevice device = config;
+    
+    try
+    {
+        // Get input and output configurations from PipelineManager
+        MediaData inputData = device.getinputmediadata();
+        MediaData outputData = device.getoutputmediadata();
+
+        // Create a new pipeline
+        pipeline = gst_pipeline_new(device.name().c_str());
+        if (!pipeline) {
+            handleError("Failed to create pipeline element");
+            return false;
+        }
+
+        // Step 1: Create Source Element
+        if (inputData.esourceType == eSourceType::SOURCE_TYPE_FILE)
+        {
+            source = gst_element_factory_make("filesrc", "source");
+            if (!source) {
+                handleError("Failed to create source element");
+                return false;
+            }
+            g_object_set(G_OBJECT(source), "location", inputData.sourcePath.c_str(), NULL);
+        }
+        // Add more source types as needed
+        
+        // Add elements to pipeline
+        gst_bin_add_many(GST_BIN(pipeline), source, sink, NULL);
+        
+        // Link elements
+        if (!gst_element_link(source, sink)) {
+            handleError("Failed to link elements");
+            return false;
+        }
+        
+        // Set up bus watch
+        bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+        busWatchId = gst_bus_add_watch(bus, busCallback, this);
+        gst_object_unref(bus);
+        
+        m_state = State::READY;
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        handleError(std::string("Exception in configurePipeline: ") + e.what());
+        return false;
+    }
+}
+
+void PipelineHandler::cleanupPipeline()
+{
+    if (pipeline) {
+        gst_element_set_state(pipeline, GST_STATE_NULL);
+        gst_object_unref(pipeline);
+        pipeline = nullptr;
+    }
+    
+    if (busWatchId > 0) {
+        g_source_remove(busWatchId);
+        busWatchId = 0;
+    }
+    
+    m_state = State::INITIAL;
+}
+
+bool PipelineHandler::start()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (m_state == State::PLAYING)
+        return true;  // Already playing
+    
+    if (!pipeline) {
+        handleError("Cannot start: Pipeline not initialized");
+        return false;
+    }
+    
+    GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PLAYING);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to start pipeline");
+        return false;
+    }
+    
+    m_state = State::PLAYING;
+    m_isRunning = true;
+    
+    if (m_stateCallback)
+        m_stateCallback(m_state);
+    
+    reportStatus(PipelineStatus::Success, "Pipeline started successfully");
+    return true;
+}
+
+bool PipelineHandler::pause()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (m_state != State::PLAYING)
+        return false;  // Not playing
+    
+    if (!pipeline) {
+        handleError("Cannot pause: Pipeline not initialized");
+        return false;
+    }
+    
+    GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to pause pipeline");
+        return false;
+    }
+    
+    m_state = State::PAUSED;
+    
+    if (m_stateCallback)
+        m_stateCallback(m_state);
+    
+    reportStatus(PipelineStatus::Success, "Pipeline paused successfully");
+    return true;
+}
+
+bool PipelineHandler::resume()
+{
+    return start();  // Reuse start logic
+}
+
+bool PipelineHandler::stop()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (m_state == State::STOPPED)
+        return true;  // Already stopped
+    
+    if (!pipeline) {
+        handleError("Cannot stop: Pipeline not initialized");
+        return false;
+    }
+    
+    GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_NULL);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        handleError("Failed to stop pipeline");
+        return false;
+    }
+    
+    m_state = State::STOPPED;
+    m_isRunning = false;
+    
+    if (m_stateCallback)
+        m_stateCallback(m_state);
+    
+    reportStatus(PipelineStatus::Success, "Pipeline stopped successfully");
+    return true;
+}
+
+void PipelineHandler::terminate()
+{
+    stop();
+    cleanupPipeline();
+}
+
+bool PipelineHandler::updateConfiguration(const MediaStreamDevice& newConfig)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    // Store current state to restore it after reconfiguration
+    State previousState = m_state;
+    
+    // Stop and clean up current pipeline
+    stop();
+    cleanupPipeline();
+    
+    // Update configuration
+    config = newConfig;
+    
+    // Rebuild pipeline
+    if (!buildPipeline()) {
+        handleError("Failed to rebuild pipeline with new configuration");
+        return false;
+    }
+    
+    // Restore previous state if it was playing or paused
+    if (previousState == State::PLAYING) {
+        return start();
+    } else if (previousState == State::PAUSED) {
+        start();
+        return pause();
+    }
+    
+    return true;
+}
+
+bool PipelineHandler::isRunning() const
+{
+    return m_state == State::PLAYING;
+}
+
+PipelineHandler::State PipelineHandler::getState() const
+{
+    return m_state;
+}
+
+void PipelineHandler::setStateCallback(StateCallback callback)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_stateCallback = std::move(callback);
+}
+
+void PipelineHandler::setErrorCallback(ErrorCallback callback)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_errorCallback = std::move(callback);
+}
+
+void PipelineHandler::handleError(const std::string& error)
+{
+    m_state = State::ERROR;
+    if (m_errorCallback)
+        m_errorCallback(error);
+    
+    reportStatus(PipelineStatus::Error, error);
+}
+
+bool PipelineHandler::linkDynamicPad(GstPad* pad)
+{
+    // Implementation depends on specific pipeline structure
+    return true;
+}
+
+gboolean PipelineHandler::busCallback(GstBus* bus, GstMessage* msg, gpointer data)
+{
+    PipelineHandler* handler = static_cast<PipelineHandler*>(data);
+    
+    switch (GST_MESSAGE_TYPE(msg)) {
+        case GST_MESSAGE_EOS:
+            // End of stream
+            handler->reportStatus(PipelineStatus::Success, "End of stream reached");
+            break;
+            
+        case GST_MESSAGE_ERROR: {
+            GError* err;
+            gchar* debug_info;
+            gst_message_parse_error(msg, &err, &debug_info);
+            
+            std::string errorMsg = std::string("GStreamer error: ") + err->message;
+            handler->handleError(errorMsg);
+            
+            g_clear_error(&err);
+            g_free(debug_info);
+            break;
+        }
+            
+        case GST_MESSAGE_STATE_CHANGED: {
+            GstState old_state, new_state, pending_state;
+            gst_message_parse_state_changed(msg, &old_state, &new_state, &pending_state);
+            
+            if (GST_MESSAGE_SRC(msg) == GST_OBJECT(handler->pipeline)) {
+                // Only handle state changes for our pipeline
+                // Map GStreamer states to our State enum
+                PipelineHandler::State state;
+                switch (new_state) {
+                    case GST_STATE_PLAYING:
+                        state = PipelineHandler::State::PLAYING;
+                        break;
+                    case GST_STATE_PAUSED:
+                        state = PipelineHandler::State::PAUSED;
+                        break;
+                    case GST_STATE_READY:
+                        state = PipelineHandler::State::READY;
+                        break;
+                    case GST_STATE_NULL:
+                        state = PipelineHandler::State::STOPPED;
+                        break;
+                    default:
+                        return TRUE;
+                }
+                
+                // Update state and notify
+                handler->m_state = state;
+                if (handler->m_stateCallback) {
+                    handler->m_stateCallback(state);
+                }
+            }
+            break;
+        }
+            
+        case GST_MESSAGE_BUFFERING: {
+            // Handle buffering if needed
+            break;
+        }
+            
+        default:
+            break;
+    }
+    
+    return TRUE;
+}
+
+void PipelineHandler::padAddedHandlerStatic(GstElement* src, GstPad* new_pad, gpointer data)
+{
+    PipelineHandler* handler = static_cast<PipelineHandler*>(data);
+    handler->padAddedHandler(src, new_pad);
+}
+
+void PipelineHandler::padAddedHandler(GstElement* src, GstPad* new_pad)
+{
+    // Implementation depends on specific pipeline structure
+}

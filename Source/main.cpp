@@ -1,11 +1,8 @@
 #include <iostream>
-
 #include "PipelineRequest.h"
 #include "PipelineProcess.h"
 
-
-//
-//// Helper function to create a test MediaStreamDevice
+// Helper function to create a test MediaStreamDevice
 PipelineRequest createTestDevice(const std::string& rtspUrl, eSourceType sourceType)
 {
     PipelineRequest request;
@@ -56,224 +53,87 @@ PipelineRequest StartTestDevice(const std::string& rtspUrl, eSourceType sourceTy
     return request;
 }
 
-//// Helper function to print pipeline status
-//void printPipelineStatus(const PipelineManager& manager) {
-//    auto activePipelines = manager.getActivePipelines();
-//    std::cout << "\nActive Pipelines: " << activePipelines.size() << std::endl;
-//    for (const auto& id : activePipelines) {
-//        std::cout << "Pipeline ID: " << id << " is running" << std::endl;
-//    }
-//    std::cout << "Queue Size: " << manager.getQueueSize() << std::endl;
-//}
-
-
-void actualcallback(MXPIPELINE_PROCESS_STATUS_CODE, std::string status)
+// New unified callback function
+void pipelineCallback(
+    PipelineStatus status,
+    size_t pipelineId,
+    size_t requestId,
+    const std::string& message)
 {
+    // Format the status as a string
+    std::string statusStr;
+    switch (status) {
+        case PipelineStatus::Success:
+            statusStr = "SUCCESS";
+            break;
+        case PipelineStatus::InProgress:
+            statusStr = "IN_PROGRESS";
+            break;
+        case PipelineStatus::Error:
+            statusStr = "ERROR";
+            break;
+        case PipelineStatus::NetworkError:
+            statusStr = "NETWORK_ERROR";
+            break;
+        case PipelineStatus::ConfigError:
+            statusStr = "CONFIG_ERROR";
+            break;
+        case PipelineStatus::ResourceError:
+            statusStr = "RESOURCE_ERROR";
+            break;
+        case PipelineStatus::Timeout:
+            statusStr = "TIMEOUT";
+            break;
+        case PipelineStatus::Cancelled:
+            statusStr = "CANCELLED";
+            break;
+        default:
+            statusStr = "UNKNOWN";
+            break;
+    }
 
+    // Print the formatted message
+    std::cout << "====================" << std::endl;
+    std::cout << "Pipeline " << pipelineId << " (Request " << requestId << "): " << statusStr << std::endl;
+    std::cout << "Message: " << message << std::endl;
+    std::cout << "====================" << std::endl;
 }
 
 int main()
 {
     try
     {
-        // Initialize the pipeline process
-        if (!PipelineProcess::initialize("debug_config.json", actualcallback))
+        // Initialize the pipeline process with our new callback
+        if (!PipelineProcess::initialize("debug_config.json", pipelineCallback))
         {
             std::cerr << "Failed to initialize pipeline process" << std::endl;
             return 1;
         }
+        std::cerr << "initialize done" << std::endl;
+        // Create and enqueue a test request
+        PipelineRequest request = createTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+        PipelineProcess::enqueueRequest(request);
 
-
+        // Main application loop
         while (true) 
         {
             // Here you would typically:
             // 1. Listen for socket connections
             // 2. Handle UI events
             // 3. Process other system events
-            // Example: PipelineProcess::enqueueRequest(someRequest);
-
-            PipelineRequest request1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
-
-            PipelineProcess::enqueueRequest(request1);
-
-           /* PipelineRequest request2 = StartTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
-
-            PipelineProcess::enqueueRequest(request2);*/
-
-            std::this_thread::sleep_for(std::chrono::seconds(200));
-
-            std::cerr << "Failed to initialize pipeline process" << std::endl;
-            //PipelineProcess::shutdown();
+            
+            // For testing, we'll just sleep and then exit
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            break;
         }
 
-        // Cleanup
+        // Clean shutdown
         PipelineProcess::shutdown();
-
         return 0;
-
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
+        std::cerr << "Exception in main: " << e.what() << std::endl;
         return 1;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // socket + parse 
-
-    // callback
-
-    //try 
-    //{
-    //    // Create pipeline manager
-    //    PipelineManager manager;
-    //    manager.initializemanager();
-
-    //    // Initialize logger
-    //    if (!manager.initializeLogger("debug_config.json"))
-    //    {
-    //        std::cerr << "Warning: Failed to initialize pipeline manager" << std::endl;
-    //    }
-    //    
-    //    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    //    // Create first pipeline
-    //    auto device1 = createTestDevice("rtsp://admin:admin@192.168.111.150/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
-    //   
-    //    auto id1 = manager.createPipeline(device1);
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    //    manager.sendPipelineRequest(id1,device1,PipelineOperation::Run);
-    //   // manager.startPipeline(id1);
-    //    
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-    //    manager.sendPipelineRequest(id1,device1,PipelineOperation::Start);
-
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-    //    manager.sendPipelineRequest(id1,device1,PipelineOperation::Pause);
-
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-    //    manager.sendPipelineRequest(id1, device1, PipelineOperation::Resume);
-
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-    //    manager.sendPipelineRequest(id1, device1, PipelineOperation::Terminate);
-    //   // manager.sendPipelineRequest(id1, device1, PipelineOperation::Stop);
-
-    //    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-
-
-
-
-    //    //// Create second pipeline
-    //    //auto device2 = createTestDevice("rtsp://admin:admin@192.168.111.11/unicaststream/1", eSourceType::SOURCE_TYPE_NETWORK);
-    //    //auto id2 = manager.createPipeline(device2);
-    //    //std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    //    //manager.startPipeline(id2);
-    //    //
-    //    //printPipelineStatus(manager);
-    //    //
-    //    //// Test Case 2: Pipeline Control Operations
-    //    //std::cout << "\n=== Test Case 2: Pipeline Control Operations ===" << std::endl;
-    //    //
-    //    //// Pause pipeline 1
-    //    //std::cout << "Pausing pipeline " << id1 << std::endl;
-    //    //manager.pausePipeline(id1);
-    //    //std::this_thread::sleep_for(std::chrono::seconds(1));
-    //    //
-    //    //// Resume pipeline 1
-    //    //std::cout << "Resuming pipeline " << id1 << std::endl;
-    //    //manager.resumePipeline(id1);
-    //    //std::this_thread::sleep_for(std::chrono::seconds(1));
-    //    //
-    //    //// Test Case 3: Pipeline Updates
-    //    //std::cout << "\n=== Test Case 3: Pipeline Updates ===" << std::endl;
-    //    //
-    //    //// Update pipeline 2 configuration
-    //    //auto updatedDevice2 = device2;
-    //    //Resolution res = updatedDevice2.resolution();
-    //    //res.width = 1280;
-    //    //res.height = 720;
-    //    //updatedDevice2.setResolution(res);
-    //    //std::cout << "Updating pipeline " << id2 << " configuration" << std::endl;
-    //    //manager.updatePipeline(id2, updatedDevice2);
-    //    //
-    //    //// Test Case 4: Pipeline Termination
-    //    //std::cout << "\n=== Test Case 4: Pipeline Termination ===" << std::endl;
-    //    //
-    //    //// Stop pipeline 1
-    //    //std::cout << "Stopping pipeline " << id1 << std::endl;
-    //    //manager.stopPipeline(id1);
-    //    //std::this_thread::sleep_for(std::chrono::seconds(1));
-    //    //
-    //    //// Terminate pipeline 2
-    //    //std::cout << "Terminating pipeline " << id2 << std::endl;
-    //    //manager.terminatePipeline(id2);
-    //    //
-    //    //printPipelineStatus(manager);
-    //    //
-    //    //// Test Case 5: Error Handling
-    //    //std::cout << "\n=== Test Case 5: Error Handling ===" << std::endl;
-    //    //
-    //    //// Try to start non-existent pipeline
-    //    //std::cout << "Attempting to start non-existent pipeline..." << std::endl;
-    //    //if (!manager.startPipeline(999)) {
-    //    //    std::cout << "Successfully handled invalid pipeline ID" << std::endl;
-    //    //}
-    //    //
-    //    //// Test Case 6: Stress Test
-    //    //std::cout << "\n=== Test Case 6: Stress Test ===" << std::endl;
-    //    //
-    //    //// Create multiple pipelines rapidly
-    //    //std::vector<PipelineID> pipelineIds;
-    //    //const int numPipelines = 10;
-    //    //for (int i = 0; i < numPipelines; ++i) {
-    //    //    auto stressDevice = createTestDevice(
-    //    //        "rtsp://stress" + std::to_string(i) + ".example.com/stream1",
-    //    //        eSourceType::SOURCE_TYPE_NETWORK
-    //    //    );
-    //    //    auto id = manager.createPipeline(stressDevice);
-    //    //    pipelineIds.push_back(id);
-    //    //    manager.startPipeline(id);
-    //    //    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    //    //}
-    //    //
-    //    //printPipelineStatus(manager);
-    //    //
-    //    //// Cleanup stress test pipelines
-    //    //for (auto id : pipelineIds) {
-    //    //    manager.terminatePipeline(id);
-    //    //}
-    //    //
-    //    std::cout << "\n=== All tests completed ===" << std::endl;
-    //    
-    //    // Wait for user input before exiting
-    //    std::cout << "\nPress Enter to exit..." << std::endl;
-    //    std::cin.get();
-    //    
-    //    return 0;
-    //}
-    //catch (const std::exception& e) {
-    //    std::cerr << "Fatal error: " << e.what() << std::endl;
-    //    return 1;
-    //}
 }
