@@ -112,9 +112,6 @@ void MxLogger::shutdown()
 void MxLogger::write(LOGLEVEL level, const char* module, const char* message,
                     const char* file, const char* function, int line,const char* threadId) 
 {
-    static int messageCount = 0;
-    messageCount++;
-    
     if (m_loggerWrite) 
     {
         m_loggerWrite(level, module, message, file, function, line,threadId);

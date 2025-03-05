@@ -28,6 +28,7 @@ PipelineManager::~PipelineManager()
 
 void PipelineManager::initializemanager()
 {
+    gst_init(nullptr, nullptr);
     startworkerthread();
 }
 
@@ -48,10 +49,7 @@ bool PipelineManager::findMatchingpipeline(const MediaStreamDevice& streamDevice
         const MediaStreamDevice& existingConfig = handler->getConfig();
         
         // Compare the essential properties
-        if (existingConfig.getinputmediadata().esourceType == streamDevice.getinputmediadata().esourceType &&
-            existingConfig.getinputmediadata().stMediaCodec == existingConfig.getinputmediadata().stMediaCodec &&
-            existingConfig.getinputmediadata().stNetworkStreaming.sIpAddress == streamDevice.getinputmediadata().stNetworkStreaming.sIpAddress &&
-            existingConfig.getinputmediadata().stNetworkStreaming.iPort == streamDevice.getinputmediadata().stNetworkStreaming.iPort)
+        if (existingConfig == streamDevice)
         {
             existingId = id;
             MX_LOG_TRACE("PipelineManager", ("matching pipeline found ID: " + std::to_string(existingId)).c_str());
@@ -144,15 +142,11 @@ void PipelineManager::enqueuePipelineRequest(const PipelineRequest& request)
     
     // TODO : Does this need to inform ? 
     // Notify that request was received
-    if (m_callback) 
-    {
-        m_callback(
-            PipelineStatus::InProgress,
-            request.getPipelineID(),
-            request.getRequestID(),
-            "Request received by manager"
-        );
-    }
+    onHandlerCallback(
+        PipelineStatus::InProgress,
+        request.getPipelineID(),
+        request.getRequestID(),
+        "Request received and enqueue by Pipeline Manager");
 }
 
 void PipelineManager::processpipelinerequest()
@@ -198,7 +192,7 @@ void PipelineManager::processpipelinerequest()
                     // TODO : what to do blindlly created or return 
                     break;
                 }
-                createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
+                createPipelineInternal(request.getPipelineID(), request.getRequestID(), request.getMediaStreamDevice());
                 break;
             }
             case eAction::ACTION_UPDATE:
@@ -228,7 +222,7 @@ void PipelineManager::processpipelinerequest()
 
                     break;
                 }
-                createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
+                createPipelineInternal(request.getPipelineID(), request.getRequestID(), request.getMediaStreamDevice());
                 startPipeline(request.getPipelineID());
                 break;
             }
@@ -238,7 +232,7 @@ void PipelineManager::processpipelinerequest()
                 if (!findMatchingpipeline(request.getMediaStreamDevice(), existingId))
                 {
                     MX_LOG_INFO("PipelineManager", ("match same pipeline so can create first and then start  :" + std::to_string(existingId)).c_str());
-                    createPipelineInternal(request.getPipelineID(), request.getMediaStreamDevice());
+                    createPipelineInternal(request.getPipelineID(), request.getRequestID(), request.getMediaStreamDevice());
                 }
                 startPipeline(request.getPipelineID());
                 break;
@@ -279,7 +273,7 @@ void PipelineManager::processpipelinerequest()
 
 ///////////////////////////////////////////////    Control operations  //////////////////////////////////////////
 
-void PipelineManager::createPipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice)
+void PipelineManager::createPipelineInternal(PipelineID id, size_t iRequestID, const MediaStreamDevice& streamDevice)
 {
     std::lock_guard<std::mutex> lock(m_pipemangermutex);
 
@@ -289,6 +283,7 @@ void PipelineManager::createPipelineInternal(PipelineID id, const MediaStreamDev
 
         // Set the pipeline ID
         handler->setPipelineId(id);
+        handler->setCurrentRequestId(iRequestID);
 
         // Set unified callback instead of separate state and error callbacks
         handler->setCallback(
@@ -303,17 +298,15 @@ void PipelineManager::createPipelineInternal(PipelineID id, const MediaStreamDev
         m_pipelineHandlers[id] = std::move(handler);
 
         MX_LOG_TRACE("PipelineManager", ("Created pipeline with ID: " + std::to_string(id)).c_str());
-    } catch (const std::exception& e) {
-        // Report error
-        if (m_callback) {
-            m_callback(
-                PipelineStatus::Error,
-                id,
-                0, // No request ID available
-                std::string("Failed to create pipeline: ") + e.what()
-            );
-        }
-        
+    } 
+    catch (const std::exception& e) 
+    {
+        onHandlerCallback(
+            PipelineStatus::Error,
+            id,
+            iRequestID,
+            std::string("Failed to create pipeline: ") + e.what()
+        );
         throw; // Re-throw to be caught by the caller
     }
 }

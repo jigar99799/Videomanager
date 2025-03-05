@@ -11,19 +11,22 @@ PipelineRequest createTestDevice(const std::string& rtspUrl, eSourceType sourceT
     i++;
     request.setPipelineID(i); 
     request.setRequestID(i); 
-    request.setEAction(eAction::ACTION_RUN);
+    request.setEAction(eAction::ACTION_CREATE);
 
     MediaStreamDevice device;
     device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
     device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stNetworkStreaming.estreamingProtocol = eStreamingProtocol::STREAMING_PROTOCOL_RTSP;
     device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stinputMediaData.stMediaCodec.eaudiocodec = eAudioCodec::AUDIO_CODEC_G711_ALAW;
+    device.stinputMediaData.stMediaCodec.codecname = "video/H264";
     device.stinputMediaData.stMediaCodec.type = CodecType::H264;
     device.stinputMediaData.stMediaCodec.bitrate = 20000;
     device.stinputMediaData.stNetworkStreaming.sIpAddress = "192.168.111.11";
     device.stinputMediaData.stNetworkStreaming.iPort = 1050;
     device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
     device.stoutputMediaData.stMediaCodec.type = CodecType::H264;
-    request.setMediaStreamDevice(device); 
+    request.setMediaStreamDevice(device);
 
     return request;
 }
@@ -41,6 +44,35 @@ PipelineRequest StartTestDevice(const std::string& rtspUrl, eSourceType sourceTy
     MediaStreamDevice device;
     device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
     device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stNetworkStreaming.estreamingProtocol = eStreamingProtocol::STREAMING_PROTOCOL_RTSP;
+    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stinputMediaData.stMediaCodec.eaudiocodec = eAudioCodec::AUDIO_CODEC_G711_ALAW;
+    device.stinputMediaData.stMediaCodec.codecname = "video/H264";
+    device.stinputMediaData.stMediaCodec.type = CodecType::H264;
+    device.stinputMediaData.stMediaCodec.bitrate = 20000;
+    device.stinputMediaData.stNetworkStreaming.sIpAddress = "192.168.111.11";
+    device.stinputMediaData.stNetworkStreaming.iPort = 1050;
+    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
+    device.stoutputMediaData.stMediaCodec.type = CodecType::H264;
+    request.setMediaStreamDevice(device);
+
+    return request;
+}
+
+PipelineRequest PauseTestDevice(const std::string& rtspUrl, eSourceType sourceType)
+{
+    PipelineRequest request;
+
+    static int i = 0;
+    i++;
+    request.setPipelineID(i);
+    request.setRequestID(i);
+    request.setEAction(eAction::ACTION_PAUSE);
+
+    MediaStreamDevice device;
+    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
+    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stNetworkStreaming.estreamingProtocol = eStreamingProtocol::STREAMING_PROTOCOL_RTSP;
     device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
     device.stinputMediaData.stMediaCodec.type = CodecType::H264;
     device.stinputMediaData.stMediaCodec.bitrate = 20000;
@@ -52,6 +84,59 @@ PipelineRequest StartTestDevice(const std::string& rtspUrl, eSourceType sourceTy
 
     return request;
 }
+
+PipelineRequest ResumeTestDevice(const std::string& rtspUrl, eSourceType sourceType)
+{
+    PipelineRequest request;
+
+    static int i = 0;
+    i++;
+    request.setPipelineID(i);
+    request.setRequestID(i);
+    request.setEAction(eAction::ACTION_RESUME);
+
+    MediaStreamDevice device;
+    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
+    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stNetworkStreaming.estreamingProtocol = eStreamingProtocol::STREAMING_PROTOCOL_RTSP;
+    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stinputMediaData.stMediaCodec.type = CodecType::H264;
+    device.stinputMediaData.stMediaCodec.bitrate = 20000;
+    device.stinputMediaData.stNetworkStreaming.sIpAddress = "192.168.111.11";
+    device.stinputMediaData.stNetworkStreaming.iPort = 1050;
+    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
+    device.stoutputMediaData.stMediaCodec.type = CodecType::H264;
+    request.setMediaStreamDevice(device);
+
+    return request;
+}
+
+PipelineRequest StopTestDevice(const std::string& rtspUrl, eSourceType sourceType)
+{
+    PipelineRequest request;
+
+    static int i = 0;
+    i++;
+    request.setPipelineID(i);
+    request.setRequestID(i);
+    request.setEAction(eAction::ACTION_STOP);
+
+    MediaStreamDevice device;
+    device.sDeviceName = "rtsp://admin:admin@192.168.111.150/unicaststream/1";
+    device.stinputMediaData.esourceType = eSourceType::SOURCE_TYPE_NETWORK;
+    device.stinputMediaData.stNetworkStreaming.estreamingProtocol = eStreamingProtocol::STREAMING_PROTOCOL_RTSP;
+    device.stinputMediaData.stMediaCodec.evideocodec = eVideoCodec::VIDEO_CODEC_H264;
+    device.stinputMediaData.stMediaCodec.type = CodecType::H264;
+    device.stinputMediaData.stMediaCodec.bitrate = 20000;
+    device.stinputMediaData.stNetworkStreaming.sIpAddress = "192.168.111.11";
+    device.stinputMediaData.stNetworkStreaming.iPort = 1050;
+    device.stoutputMediaData.esourceType = eSourceType::SOURCE_TYPE_DISPLAY;
+    device.stoutputMediaData.stMediaCodec.type = CodecType::H264;
+    request.setMediaStreamDevice(device);
+
+    return request;
+}
+
 
 // New unified callback function
 void pipelineCallback(
@@ -109,27 +194,48 @@ int main()
             std::cerr << "Failed to initialize pipeline process" << std::endl;
             return 1;
         }
-        std::cerr << "initialize done" << std::endl;
-        // Create and enqueue a test request
-        PipelineRequest request = createTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
-        PipelineProcess::enqueueRequest(request);
-
+      
         // Main application loop
-        while (true) 
+        while (true)
         {
             // Here you would typically:
             // 1. Listen for socket connections
             // 2. Handle UI events
             // 3. Process other system events
-            
-            // For testing, we'll just sleep and then exit
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+
+            PipelineRequest request  = createTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+            PipelineProcess::enqueueRequest(request);
+
+            //std::this_thread::sleep_for(std::chrono::seconds(15));
+
+            PipelineRequest  request1 = StartTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+            PipelineProcess::enqueueRequest(request1);
+
+            std::this_thread::sleep_for(std::chrono::seconds(150));
+
+            // request = PauseTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+            // PipelineProcess::enqueueRequest(request);
+
+            // std::this_thread::sleep_for(std::chrono::seconds(15));
+
+            // request = ResumeTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+            // PipelineProcess::enqueueRequest(request);
+
+            // std::this_thread::sleep_for(std::chrono::seconds(15));
+
+            // request = StopTestDevice("rtsp://test", eSourceType::SOURCE_TYPE_NETWORK);
+            // PipelineProcess::enqueueRequest(request);
             break;
         }
+        int x = 0;
+        std::cin >> x;;
 
         // Clean shutdown
         PipelineProcess::shutdown();
-        return 0;
+
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+
+        return 1;
     }
     catch (const std::exception& e)
     {

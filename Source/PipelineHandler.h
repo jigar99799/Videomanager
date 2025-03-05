@@ -2,6 +2,8 @@
 #define PIPELINE_HANDLER_H
 
 #include <gst/gst.h>
+#include <gst/rtsp/gstrtspconnection.h>
+
 #include <memory>
 #include <mutex>
 #include <string>
@@ -11,6 +13,9 @@
 #include "MediaStreamDevice.h"
 #include "PipelineProcess.h" // For PipelineStatus enum
 #include "PipelineHandler.h"
+#include "MxDepayloaderFactory.h"
+#include "Mx_ParseFactory.h"
+#include "StreamDiscoverer.h"
 
 // Forward declaration
 struct MediaStreamDevice;
@@ -40,45 +45,30 @@ public:
 
 private:
 
-    struct GstElements
-    {
-        GstElement* pipeline{ nullptr };
-        GstElement* source{ nullptr };
-        GstElement* depay{ nullptr };
-        GstElement* demuxer{ nullptr };
-        GstElement* parser{ nullptr };
-        GstElement* decoder{ nullptr };
-        GstElement* muxer{ nullptr };
-        GstElement* payloader{ nullptr };
-        GstElement* encoder{ nullptr };
-        GstElement* convert{ nullptr };
-        GstElement* sink{ nullptr };
-
-        void reset()
-        {
-            pipeline = nullptr;
-            source = nullptr;
-            depay = nullptr;
-            demuxer = nullptr;
-            parser = nullptr;
-            decoder = nullptr;
-            muxer = nullptr;
-            payloader = nullptr;
-            encoder = nullptr;
-            convert = nullptr;
-            sink = nullptr;
-
-        }
-    };
+    GstElement* pipeline;
+    GstElement* source;
+    GstElement* depay;
+    GstElement* demuxer;
+    GstElement* parser;
+    GstElement* decoder;
+    GstElement* muxer;
+    GstElement* payloader;
+    GstElement* encoder;
+    GstElement* convert;
+    GstElement* sink;
+    GstElement* parser2;
+    GstElement* filter;
+    GstElement* videorate;
+    GstElement* videoscale;
+    GstElement* prevElement; // for generic pipeline create
+    GstElement* audiodepay;
+    std::mutex mtx;
 
     // Pipeline state
     State m_state;
     std::atomic<bool> m_isRunning{false};
     size_t m_pipelineId{0};
     size_t m_currentRequestId{0};
-    
-    // Pipeline elements and configuration
-    GstElements elements;
     MediaStreamDevice config;
 
     // Callbacks
@@ -88,7 +78,8 @@ private:
     std::mutex m_mutex;
     
     // Pipeline building
-    bool buildPipeline();
+    void buildPipeline();
+    void MediaConfigurationChanges();
     bool configurePipeline();
     void cleanupPipeline();
     
@@ -129,7 +120,8 @@ public:
     const MediaStreamDevice& getConfig() const { return config; }
     
     // Unified callback
-    void setCallback(HandlerCallback callback) {
+    void setCallback(HandlerCallback callback) 
+    {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_callback = callback;
     }

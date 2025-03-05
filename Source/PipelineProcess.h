@@ -46,7 +46,8 @@ private:
 
     ~PipelineProcess()
     {
-        shutdown(); // Ensure cleanup before destruction
+        // Don't call shutdown() here to avoid circular dependency
+        // Resources will be cleaned up by the shutdown() method called externally
     }
 
     void processEvents();
@@ -78,4 +79,9 @@ public:
     
     // Set callback for pipeline status updates and errors
     static void setCallback(PipelineCallback callback);
+    
+    // Clean up the singleton instance - call this at application exit
+    static void cleanupInstance() {
+        s_instance.reset();
+    }
 };

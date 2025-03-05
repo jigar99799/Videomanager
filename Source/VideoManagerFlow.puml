@@ -1,0 +1,62 @@
+@startuml Video Manager Pipeline Flow
+
+' Define participants
+actor Client
+participant "Main" as Main
+participant "PipelineProcess" as Process
+participant "PipelineManager" as Manager
+participant "PipelineHandler" as Handler
+participant "StreamDiscoverer" as Discoverer
+
+' Define main flow
+Client -> Main: Request Pipeline Operation
+Main -> Process: enqueueRequest(PipelineRequest)
+Process -> Process: processEvents()
+Process -> Manager: sendPipelineRequest(request)
+Manager -> Manager: enqueuePipelineRequest(request)
+Manager -> Manager: processpipelinerequest()
+
+' Branch based on action type
+alt ACTION_CREATE
+    Manager -> Manager: validatepipelineConfig()
+    Manager -> Manager: findMatchingpipeline()
+    Manager -> Manager: createPipelineInternal()
+    Manager -> Handler: <<create>>
+    Handler -> Discoverer: DiscoverStream()
+    Discoverer -> Handler: StreamInfo
+    Handler -> Handler: buildPipeline()
+else ACTION_START
+    Manager -> Manager: findMatchingpipeline()
+    alt Pipeline exists
+        Manager -> Handler: start()
+    else Pipeline doesn't exist
+        Manager -> Manager: createPipelineInternal()
+        Manager -> Handler: <<create>>
+        Handler -> Discoverer: DiscoverStream()
+        Discoverer -> Handler: StreamInfo
+        Handler -> Handler: buildPipeline()
+        Manager -> Handler: start()
+    end
+else ACTION_UPDATE
+    Manager -> Manager: findMatchingpipeline()
+    Manager -> Manager: canUpdatePipeline()
+    Manager -> Manager: updatePipelineInternal()
+    Manager -> Handler: updateConfiguration()
+else ACTION_PAUSE
+    Manager -> Handler: pause()
+else ACTION_RESUME
+    Manager -> Handler: resume()
+else ACTION_STOP
+    Manager -> Handler: stop()
+else ACTION_TERMINATE
+    Manager -> Handler: terminate()
+end
+
+' Callback flow
+Handler -> Handler: busCallback() [GStreamer events]
+Handler -> Manager: onHandlerCallback()
+Manager -> Process: onManagerCallback()
+Process -> Main: pipelineCallback()
+Main -> Client: Status update
+
+@enduml

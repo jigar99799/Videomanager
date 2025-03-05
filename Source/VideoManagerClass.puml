@@ -1,0 +1,228 @@
+@startuml Video Manager Class Diagram
+
+' Define enums and structures
+enum eAction {
+    ACTION_CREATE
+    ACTION_UPDATE
+    ACTION_START
+    ACTION_STOP
+    ACTION_PAUSE
+    ACTION_RESUME
+    ACTION_TERMINATE
+    ACTION_RUN
+}
+
+enum eSourceType {
+    SOURCE_TYPE_NETWORK
+    SOURCE_TYPE_FILE
+    SOURCE_TYPE_DISPLAY
+}
+
+enum eStreamingProtocol {
+    STREAMING_PROTOCOL_RTSP
+    STREAMING_PROTOCOL_RTP
+    STREAMING_PROTOCOL_HTTP
+}
+
+enum eVideoCodec {
+    VIDEO_CODEC_H264
+    VIDEO_CODEC_H265
+    VIDEO_CODEC_MJPEG
+}
+
+enum eAudioCodec {
+    AUDIO_CODEC_NONE
+    AUDIO_CODEC_AAC
+    AUDIO_CODEC_G711_ALAW
+    AUDIO_CODEC_G711_MULAW
+}
+
+enum CodecType {
+    H264
+    H265
+    VP8
+    VP9
+    OTHER
+}
+
+enum PipelineStatus {
+    Success
+    Error
+    Warning
+    Information
+}
+
+class MediaCodec {
+    +eVideoCodec evideocodec
+    +eAudioCodec eaudiocodec
+    +std::string codecname
+    +CodecType type
+    +int bitrate
+}
+
+class NetworkStreaming {
+    +eStreamingProtocol estreamingProtocol
+    +std::string sIpAddress
+    +int iPort
+}
+
+class MediaData {
+    +eSourceType esourceType
+    +MediaCodec stMediaCodec
+    +NetworkStreaming stNetworkStreaming
+}
+
+class MediaStreamDevice {
+    +std::string sDeviceName
+    +MediaData stinputMediaData
+    +MediaData stoutputMediaData
+    +bool operator==(const MediaStreamDevice&)
+    +std::string name()
+    +MediaData getinputmediadata()
+    +MediaData getoutputmediadata()
+}
+
+class PipelineRequest {
+    -eAction action
+    -size_t pipelineID
+    -size_t requestID
+    -MediaStreamDevice device
+    +setPipelineID(size_t)
+    +setRequestID(size_t)
+    +setEAction(eAction)
+    +setMediaStreamDevice(const MediaStreamDevice&)
+    +eAction getEAction()
+    +size_t getPipelineID()
+    +size_t getRequestID()
+    +MediaStreamDevice getMediaStreamDevice()
+}
+
+class StreamInfo {
+    +bool hasVideo
+    +bool hasAudio
+    +std::string videoCodec
+    +std::string audioCodec
+    +int width
+    +int height
+    +double framerate
+    +int audioBitrate
+    +int audioChannels
+    +int audioSampleRate
+}
+
+' Define classes
+class PipelineProcess {
+    -static std::unique_ptr<PipelineProcess> s_instance
+    -static std::mutex s_mutex
+    -static std::once_flag s_onceFlag
+    -static std::condition_variable m_cvEventQueue
+    -static PipelineCallback m_callback
+    -static std::atomic<bool> g_processrunning
+    -std::unique_ptr<PipelineManager> m_pipelineManager
+    -std::thread m_processingThread
+    -std::unique_ptr<TQueue<PipelineRequest>> m_eventQueue
+    
+    +static PipelineProcess& getInstance()
+    +static bool initialize(const char*, PipelineCallback)
+    +static void processEvents()
+    +static void enqueueRequest(const PipelineRequest&)
+    +static void shutdown()
+    +static void setCallback(PipelineCallback)
+    +static void onManagerCallback(PipelineStatus, size_t, size_t, const std::string&)
+    +static void PipelineErrorcallback(const std::string&)
+}
+
+class PipelineManager {
+    -std::unordered_map<PipelineID, PipelineHandlerPtr> m_pipelineHandlers
+    -TQueue<PipelineRequest> m_pipelinerequest
+    -std::thread m_workerThread
+    -std::mutex m_pipemangermutex
+    -std::condition_variable m_cv
+    -std::atomic<bool> m_running
+    -ManagerCallback m_callback
+    
+    +void initializemanager()
+    +void setManagerCallback(ManagerCallback)
+    +void sendPipelineRequest(PipelineRequest)
+    -bool findMatchingpipeline(const MediaStreamDevice&, PipelineID&)
+    -bool validatepipelineConfig(const MediaStreamDevice&)
+    -bool ispipelineexists(PipelineID)
+    -bool canUpdatePipeline(PipelineID, const MediaStreamDevice&)
+    -void startworkerthread()
+    -void stopworkerthread()
+    -void enqueuePipelineRequest(const PipelineRequest&)
+    -void processpipelinerequest()
+    -void createPipelineInternal(PipelineID, size_t, const MediaStreamDevice&)
+    -void updatePipelineInternal(PipelineID, const MediaStreamDevice&)
+    -bool startPipeline(PipelineID)
+    -bool pausePipeline(PipelineID)
+    -bool resumePipeline(PipelineID)
+    -bool stopPipeline(PipelineID)
+    -bool terminatePipeline(PipelineID)
+    -void onHandlerCallback(PipelineStatus, size_t, size_t, const std::string&)
+}
+
+class PipelineHandler {
+    -enum State {INITIAL, READY, PLAYING, PAUSED, STOPPED, ERROR}
+    -MediaStreamDevice config
+    -State m_state
+    -ManagerCallback m_callback
+    -GstElement *pipeline
+    -GstElement *source
+    -GstElement *depay
+    -GstElement *audiodepay
+    -GstElement *videoqueue
+    -GstElement *videoconvert
+    -GstElement *videosink
+    -GstElement *tee
+    
+    +PipelineHandler(const MediaStreamDevice&)
+    +void buildPipeline()
+    +void cleanupPipeline()
+    +bool start()
+    +bool pause()
+    +bool resume()
+    +bool stop()
+    +void terminate()
+    +bool updateConfiguration(const MediaStreamDevice&)
+    +bool isRunning()
+    +State getState()
+    +MediaStreamDevice getConfig()
+    -void handleError(const std::string&)
+    -void on_pad_added(GstElement*, GstPad*, gpointer)
+    -bool linkDynamicPad(GstPad*)
+    -gboolean busCallback(GstBus*, GstMessage*, gpointer)
+}
+
+class StreamDiscoverer {
+    -static StreamInfo stream_info
+    
+    +static bool DiscoverStream(const gchar*)
+    +static const StreamInfo& getStreamInfo()
+    -static void ProcessStreams(GstDiscovererInfo*)
+    -static void ProcessVideoStream(GstDiscovererStreamInfo*)
+    -static void ProcessAudioStream(GstDiscovererStreamInfo*)
+    -static void ProcessSubtitleStream(GstDiscovererStreamInfo*)
+    -static void OutputStreamInfo()
+    -static std::string extractAfterLastSlash(const std::string&)
+    -static std::string getCodecFromStreamInfo(GstDiscovererStreamInfo*)
+}
+
+' Define relationships
+PipelineProcess "1" -- "1" PipelineManager : manages >
+PipelineManager "1" -- "*" PipelineHandler : manages >
+PipelineHandler --> StreamDiscoverer : uses >
+
+PipelineRequest *-- MediaStreamDevice
+PipelineRequest *-- eAction
+MediaStreamDevice *-- MediaData
+MediaData *-- eSourceType
+MediaData *-- MediaCodec
+MediaData *-- NetworkStreaming
+MediaCodec *-- eVideoCodec
+MediaCodec *-- eAudioCodec
+MediaCodec *-- CodecType
+NetworkStreaming *-- eStreamingProtocol
+StreamDiscoverer --> StreamInfo
+
+@enduml

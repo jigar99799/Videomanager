@@ -11,20 +11,25 @@ EXECUTABLE := $(BIN_DIR)/VideoManager
 
 # Compiler and flags
 CXX       := g++
-CXXFLAGS  := -std=c++17 -Wall \
-             -I$(EXTRA_INC) \
-             -I$(HDR_DIR) \
-             -I/usr/local/include/Poco \
-             -I$(DEPS_INSTALL_DIR)/include \
-             -pthread \
-             `pkg-config --cflags gstreamer-1.0 gstreamer-video-1.0 gstreamer-app-1.0`
+CXXFLAGS = -std=c++17 -Wall -I./ -I./header \
+           -I/usr/local/include/Poco \
+           -I/usr/include/gstreamer-1.0 \
+           -I/usr/include/glib-2.0 \
+           -I/usr/lib/x86_64-linux-gnu/glib-2.0/include \
+           -I/usr/include/gstreamer-1.0/gst \
+           -pthread \
+           `pkg-config --cflags gstreamer-1.0 gstreamer-pbutils-1.0 gstreamer-app-1.0`
 
-# Linker flags: add library paths and link against GStreamer (via pkg-config) and POCO libraries
-LDFLAGS   := -L/usr/local/lib -L$(DEPS_INSTALL_DIR)/lib \
-             -pthread \
-             `pkg-config --libs gstreamer-1.0 gstreamer-video-1.0 gstreamer-app-1.0` \
-             -lPocoFoundation -lPocoNet -lPocoUtil -lPocoXML -lPocoJSON
+# Path to libraries
+POCO_LIB_PATH = /usr/local/lib
 
+# Linker flags for Poco and GStreamer
+LDFLAGS = -L$(POCO_LIB_PATH) \
+          -lPocoJSON -lPocoXML -lPocoFoundation \
+          -pthread \
+          `pkg-config --libs gstreamer-1.0 gstreamer-pbutils-1.0 gstreamer-app-1.0 gobject-2.0 glib-2.0` \
+          -lstdc++fs
+		  
 # List of source files (all .cpp files under SRC_DIR)
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 

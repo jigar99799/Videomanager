@@ -53,20 +53,21 @@ struct MediaCodec
 	eVideoCodec evideocodec;
 	eAudioCodec eaudiocodec;
 	eAudioSampleRate eaudioSampleRate;
-
+	
 	// New members
 	CodecType type;
-	int bitrate{0};
+	int bitrate ;
 	std::string profile;
 	std::string preset;
+	std::string codecname;
 
-	MediaCodec() : evideocodec(eVideoCodec::VIDEO_CODEC_NONE), eaudiocodec(eAudioCodec::AUDIO_CODEC_NONE), eaudioSampleRate(eAudioSampleRate::AUDIO_SAMPLE_RATE_NONE), type(CodecType::H264), bitrate(0) {}
+	MediaCodec() : evideocodec(eVideoCodec::VIDEO_CODEC_NONE), eaudiocodec(eAudioCodec::AUDIO_CODEC_NONE), eaudioSampleRate(eAudioSampleRate::AUDIO_SAMPLE_RATE_NONE), type(CodecType::H264), bitrate(0), codecname("") {}
 
-	MediaCodec(eVideoCodec video, eAudioCodec audio, eAudioSampleRate audioRate)
-		: evideocodec(video), eaudiocodec(audio), eaudioSampleRate(audioRate), type(CodecType::H264), bitrate(0) {}
+	MediaCodec(eVideoCodec video, eAudioCodec audio, eAudioSampleRate audioRate, std::string codec)
+		: evideocodec(video), eaudiocodec(audio), eaudioSampleRate(audioRate), type(CodecType::H264), bitrate(0), codecname(codec) {}
 
 	MediaCodec(const MediaCodec& other)
-		: evideocodec(other.evideocodec), eaudiocodec(other.eaudiocodec), eaudioSampleRate(other.eaudioSampleRate), type(other.type), bitrate(other.bitrate), profile(other.profile), preset(other.preset) {}
+		: evideocodec(other.evideocodec), eaudiocodec(other.eaudiocodec), eaudioSampleRate(other.eaudioSampleRate), type(other.type), bitrate(other.bitrate), profile(other.profile), preset(other.preset), codecname(other.codecname) {}
 
 	MediaCodec& operator=(const MediaCodec& other)
 	{
@@ -79,6 +80,7 @@ struct MediaCodec
 			bitrate = other.bitrate;
 			profile = other.profile;
 			preset = other.preset;
+			codecname = other.codecname;
 		}
 		return *this;
 	}
@@ -91,7 +93,8 @@ struct MediaCodec
 				type == other.type &&
 				bitrate == other.bitrate &&
 				profile == other.profile &&
-				preset == other.preset);
+				preset == other.preset &&
+			codecname == other.codecname);
 	}
 
 	bool operator!=(const MediaCodec& other) const
@@ -223,7 +226,7 @@ struct MediaStreamDevice
 	std::string sDeviceName;
 	MediaData stinputMediaData;
 	MediaData stoutputMediaData;
-	
+	std::string sourceOuputURL;
 
 public:
 	// Getters and setters
@@ -241,19 +244,22 @@ public:
 	MediaStreamDevice()
 		: sDeviceName("")
 		, stinputMediaData()
-		, stoutputMediaData() {}
+		, stoutputMediaData()
+	    , sourceOuputURL() {}
 
 	// Existing constructors
-	MediaStreamDevice(const std::string& deviceName, const MediaData& inputMediaData, const MediaData& outputMediaData)
+	MediaStreamDevice(const std::string& deviceName, const MediaData& inputMediaData, const MediaData& outputMediaData, std::string sourceOuputURL)
 		: sDeviceName(deviceName)
 		, stinputMediaData(inputMediaData)
-		, stoutputMediaData(outputMediaData) {}
+		, stoutputMediaData(outputMediaData)
+		, sourceOuputURL(sourceOuputURL) {}
 
 	// Copy constructor
 	MediaStreamDevice(const MediaStreamDevice& other)
 		: sDeviceName(other.sDeviceName)
 		, stinputMediaData(other.stinputMediaData)
-		, stoutputMediaData(other.stoutputMediaData){}
+		, stoutputMediaData(other.stoutputMediaData)
+	    , sourceOuputURL(other.sourceOuputURL) {}
 
 	// Assignment operator
 	MediaStreamDevice& operator=(const MediaStreamDevice& other) {
@@ -261,6 +267,7 @@ public:
 			sDeviceName = other.sDeviceName;
 			stinputMediaData = other.stinputMediaData;
 			stoutputMediaData = other.stoutputMediaData;
+			sourceOuputURL = other.sourceOuputURL;
 		}
 		return *this;
 	}
@@ -269,21 +276,47 @@ public:
 	{
 		return (sDeviceName == other.sDeviceName &&
 			stinputMediaData == other.stinputMediaData &&
-			stoutputMediaData == other.stoutputMediaData);
+			stoutputMediaData == other.stoutputMediaData && 
+			sourceOuputURL == other.sourceOuputURL);
 	}
 
 	bool operator!=(const MediaStreamDevice& other) const 
 	{
 		return !(*this == other);
 	}
-
-
-	//// Additional constructor
-	//MediaStreamDevice(const std::string& deviceName, 
-	//				 SourceType srcType, 
-	//				 MediaType medType,
-	//				 const std::string& addr,
-	//				 int prt,
-	//				 const std::string& proto)
-	//	             : sDeviceName(deviceName) {}
 };
+
+
+// Structures to hold media stream information
+struct AudioInfo {
+	std::string codec;
+	int channels;
+	int sample_rate;
+	int depth;
+	int bitrate;
+	int max_bitrate;
+};
+
+struct VideoInfo {
+	std::string codec;
+	int width;
+	int height;
+	int depth;
+	float frame_rate;
+	float pixel_aspect_ratio;
+	bool is_interlaced;
+	int bitrate;
+	int max_bitrate;
+};
+
+struct SubtitleInfo {
+	std::string codec;
+	std::string language_name;
+};
+
+struct StreamInfo {
+	std::vector<AudioInfo> audio_streams;
+	std::vector<VideoInfo> video_streams;
+	std::vector<SubtitleInfo> subtitle_streams;
+};
+

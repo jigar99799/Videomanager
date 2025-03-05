@@ -1,7 +1,14 @@
 #include "PipelineProcess.h"
 
 // Define static members
-std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>> PipelineProcess::s_instance = nullptr;
+std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>> PipelineProcess::s_instance = 
+    std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>>(
+        nullptr, 
+        [](PipelineProcess* ptr) 
+        { 
+            if (ptr) delete ptr; 
+        }
+    );
 std::mutex PipelineProcess::s_mutex;
 std::once_flag PipelineProcess::s_onceFlag;
 std::condition_variable PipelineProcess::m_cvEventQueue;
@@ -27,17 +34,12 @@ bool PipelineProcess::initialize(const char* debugconfigPath, PipelineCallback c
             return true;
         }
 
-        // Initialize GStreamer in the main thread
-        MX_LOG_TRACE("PipelineProcess", "Initializing GStreamer");
-        gst_init(nullptr, nullptr);
-
         // set callback
         m_callback = std::move(callback);
 
         // Get the singleton instance
         PipelineProcess& instance = getInstance();
-
-       
+               
         // Step :1 init the Logger 
 
         MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(debugconfigPath);
@@ -134,15 +136,19 @@ void PipelineProcess::enqueueRequest(const PipelineRequest& request)
 {
     try
     {
-        getInstance().m_eventQueue->enqueue(request);
+        {
+            std::unique_lock<std::mutex> lock(s_mutex);
+            getInstance().m_eventQueue->enqueue(request);
+        }
+           
         m_cvEventQueue.notify_one();
-
+        
         // Notify request enqueued
         onManagerCallback(
             PipelineStatus::InProgress,
             request.getPipelineID(),
             request.getRequestID(),
-            "Request enqueued for processing");
+            "Incomming Request enqueued for in Pipeline Processor");
 
     }
     catch (const std::exception& e)
@@ -174,13 +180,24 @@ void PipelineProcess::shutdown()
         0,  // No specific request ID for shutdown
         "Pipeline process shut down successfully");
 
-    {
-        std::lock_guard<std::mutex> lock(s_mutex); // Ensure cleanup  thread-safe
-        getInstance().m_eventQueue.reset();
-        getInstance().m_pipelineManager.reset();
+    // Safely clean up resources
+    if (s_instance) {
+        std::lock_guard<std::mutex> lock(s_mutex); // Ensure cleanup thread-safe
+        
+        // Reset member pointers first
+        if (s_instance->m_eventQueue) {
+            s_instance->m_eventQueue.reset();
+        }
+        
+        if (s_instance->m_pipelineManager) {
+            s_instance->m_pipelineManager.reset();
+        }
+        
         MxLogger::instance().shutdown();
     }
-    s_instance.reset();  // Cleanup singleton
+    
+    // Now it's safe to reset the instance itself
+    cleanupInstance();
 }
 
 void PipelineProcess::setCallback(PipelineCallback callback)

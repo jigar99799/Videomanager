@@ -1,0 +1,78 @@
+@startuml Video Manager Component Diagram
+
+' Define components
+package "Video Manager Pipeline" {
+    [main] as Main
+    [PipelineProcess] as Process
+    [PipelineManager] as Manager
+    [PipelineHandler] as Handler
+    [StreamDiscoverer] as Discoverer
+    
+    database "Request Queue" as RequestQueue
+    database "Pipeline Registry" as Registry
+    
+    ' Define data classes
+    class "PipelineRequest" as Request {
+        +setEAction(eAction)
+        +setPipelineID(id)
+        +setRequestID(id)
+        +setMediaStreamDevice(device)
+    }
+    
+    class "MediaStreamDevice" as Device {
+        +sDeviceName
+        +stinputMediaData
+        +stoutputMediaData
+    }
+    
+    class "StreamInfo" as Info {
+        +hasVideo
+        +hasAudio
+        +videoCodec
+        +audioCodec
+        +width
+        +height
+        +framerate
+    }
+    
+    enum "eAction" as Action {
+        ACTION_CREATE
+        ACTION_UPDATE
+        ACTION_START
+        ACTION_STOP
+        ACTION_PAUSE
+        ACTION_RESUME
+        ACTION_TERMINATE
+        ACTION_RUN
+    }
+    
+    enum "eSourceType" as SourceType {
+        SOURCE_TYPE_NETWORK
+        SOURCE_TYPE_FILE
+        SOURCE_TYPE_DISPLAY
+    }
+}
+
+' Define relationships
+Main --> Process : initializes
+Main --> Request : creates
+Process --> Manager : sends requests
+Process --> RequestQueue : enqueues requests
+Manager --> Handler : creates/manages
+Manager --> Registry : stores pipelines
+Handler --> Discoverer : validates streams
+Handler ..> Device : configures from
+Discoverer --> Info : discovers
+
+' Define callback path
+Handler ..> Manager : status updates
+Manager ..> Process : status updates
+Process ..> Main : status updates
+
+' Define data relationships
+Request *-- Device
+Request *-- Action
+Device *-- SourceType
+Device --> Info : produces
+
+@enduml

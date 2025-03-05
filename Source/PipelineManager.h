@@ -63,7 +63,7 @@ private:
     void processpipelinerequest();
     
     //   Control operations  
-    void createPipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice);
+    void createPipelineInternal(PipelineID id, size_t iRequestID, const MediaStreamDevice& streamDevice);
     void updatePipelineInternal(PipelineID id, const MediaStreamDevice& streamDevice);
     bool startPipeline (PipelineID id);
     bool pausePipeline (PipelineID id);
