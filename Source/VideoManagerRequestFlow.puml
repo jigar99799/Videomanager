@@ -1,0 +1,197 @@
+@startuml Video Manager Request Flow
+!theme plain
+
+' Professional styling
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceGroupBackgroundColor #FAFAFA
+skinparam sequenceGroupBodyBackgroundColor white
+skinparam noteBorderColor #DDDDDD
+skinparam noteBackgroundColor #F8F9FA
+skinparam shadowing false
+skinparam DefaultFontName "Arial"
+skinparam DefaultFontSize 12
+skinparam ParticipantPadding 30
+skinparam BoxPadding 15
+
+' Define professional color palette
+!define CLIENT_COLOR #E9ECEF
+!define APP_COLOR #DEE2E6
+!define PROCESS_COLOR #D5E2E4
+!define MANAGER_COLOR #E2E8E4
+!define HANDLER_COLOR #E4EDE9
+!define QUEUE_COLOR #F8F9FA
+!define THREAD_COLOR #E9ECEF
+
+' Define arrow colors
+!define REQUEST_COLOR #2E7D32
+!define CALLBACK_COLOR #8D332E
+!define INTERNAL_COLOR #666666
+
+' Define participants in a clean, professional style
+actor Client
+box "Application Layer" #APP_COLOR
+    participant "Main\nApplication" as Main
+endbox
+
+box "Core Pipeline System" #PROCESS_COLOR
+    participant "PipelineProcess\n(Singleton)" as Process
+    collections "Event Queue" as EventQueue #QUEUE_COLOR
+    participant "Input Thread\n(Receiver)" as InputThread #THREAD_COLOR
+    collections "Callback Queue" as CallbackQueue #QUEUE_COLOR
+    participant "Callback Thread\n(Transmitter)" as CallbackThread #THREAD_COLOR
+endbox
+
+box "Pipeline Management" #MANAGER_COLOR
+    participant "PipelineManager" as Manager
+    collections "Pipeline Request\nQueue" as RequestQueue #QUEUE_COLOR
+    participant "Pipeline Manager\nWorker Thread" as ManagerThread #THREAD_COLOR
+endbox
+
+box "Pipeline Execution" #HANDLER_COLOR
+    participant "PipelineHandler" as Handler
+endbox
+
+' Title
+title Video Manager Pipeline - Request & Callback Flow
+
+' Begin the sequence diagram
+== Request Creation & Submission ==
+
+Client -> Main ++: Create pipeline request
+Main -> Main: Construct PipelineRequest
+note right
+  <b>PipelineRequest Structure:</b>
+  - action: PipelineAction (CREATE, START, etc.)
+  - id: Unique pipeline identifier
+  - requestId: Request tracking number
+  - configPath: Configuration file path
+end note
+
+Main -> Process ++: enqueueRequest(request)
+Process -> EventQueue: enqueue(request)
+note right
+  <b>Thread-Safety:</b>
+  - Protected by mutex
+  - Signals condition variable
+end note
+Process --> Main --: Return (non-blocking)
+Main --> Client --: Request submitted
+
+== Request Processing ==
+
+EventQueue -[REQUEST_COLOR]> InputThread ++: Signal (condition variable)
+InputThread -[REQUEST_COLOR]> EventQueue: dequeue(request)
+InputThread -[REQUEST_COLOR]> Process: Process request
+Process -[REQUEST_COLOR]> Manager ++: sendPipelineRequest(request)
+Manager -[REQUEST_COLOR]> RequestQueue: enqueuePipelineRequest(request)
+note right
+  <b>Request Enqueuing:</b>
+  - Adds to internal queue
+  - Protected by mutex
+  - Allows non-blocking operations
+end note
+Manager -[REQUEST_COLOR]-> Process --: Return (non-blocking)
+
+RequestQueue -[REQUEST_COLOR]> ManagerThread ++: Signal (condition variable)
+ManagerThread -[REQUEST_COLOR]> RequestQueue: dequeue(request)
+ManagerThread -[REQUEST_COLOR]> Manager: processPipelineRequest()
+
+== Request Execution (CREATE example) ==
+
+ManagerThread -[REQUEST_COLOR]> Manager: validatePipelineConfig()
+ManagerThread -[REQUEST_COLOR]> Manager: findMatchingPipeline()
+ManagerThread -[REQUEST_COLOR]> Manager: createPipelineInternal()
+
+ManagerThread -[REQUEST_COLOR]> Handler ++: Create pipeline
+Handler -[REQUEST_COLOR]> Handler: Initialize pipeline
+Handler -[REQUEST_COLOR]> Handler: Build pipeline
+
+ManagerThread -[REQUEST_COLOR]> Manager: registerPipelineHandler(id, handler)
+ManagerThread --: Continue processing next request
+
+== Status Change & Callback Flow ==
+
+Handler -[CALLBACK_COLOR]> Handler: Report status change
+Handler -[CALLBACK_COLOR]> Manager ++: onHandlerCallback(status, id, requestId, message)
+Manager -[CALLBACK_COLOR]> Process ++: onManagerCallback(status, id, requestId, message)
+
+Process -[CALLBACK_COLOR]> Process: Create CallbackData object
+note right
+  <b>CallbackData Structure:</b>
+  - status: PipelineStatus
+  - id: Pipeline identifier
+  - requestId: Original request ID
+  - message: Status message
+end note
+
+Process -[CALLBACK_COLOR]> CallbackQueue: enqueue(callbackData)
+note right
+  <b>Thread-Safety:</b>
+  - Protected by separate mutex
+  - Signals separate condition variable
+  - Different from request queue
+end note
+
+Process -[CALLBACK_COLOR]-> Manager --: Return (non-blocking)
+Manager -[CALLBACK_COLOR]-> Handler --: Return (non-blocking)
+
+CallbackQueue -[CALLBACK_COLOR]> CallbackThread ++: Signal (condition variable)
+CallbackThread -[CALLBACK_COLOR]> CallbackQueue: dequeue(callbackData)
+CallbackThread -[CALLBACK_COLOR]> Process: Process callback
+Process -[CALLBACK_COLOR]> Main ++: pipelineCallback(status, id, requestId, message)
+Main -[CALLBACK_COLOR]> Client: Notify status change
+Main -[CALLBACK_COLOR]-> CallbackThread --: Return
+CallbackThread --: Wait for next callback
+
+== Additional Pipeline Operations ==
+
+Client -> Main ++: Request pipeline start
+Main -> Process ++: enqueueRequest(START, id, requestId)
+Process -> EventQueue: enqueue(request)
+Process --> Main --: Return
+Main --> Client --: Request submitted
+
+EventQueue -[REQUEST_COLOR]> InputThread ++: Signal
+InputThread -[REQUEST_COLOR]> EventQueue: dequeue(request)
+InputThread -[REQUEST_COLOR]> Manager ++: sendPipelineRequest(request)
+Manager -[REQUEST_COLOR]> RequestQueue: enqueuePipelineRequest(request)
+Manager -[REQUEST_COLOR]-> InputThread --: Return
+InputThread --: Wait for next request
+
+RequestQueue -[REQUEST_COLOR]> ManagerThread ++: Signal
+ManagerThread -[REQUEST_COLOR]> RequestQueue: dequeue(request)
+ManagerThread -[REQUEST_COLOR]> Manager: findMatchingPipeline(id)
+ManagerThread -[REQUEST_COLOR]> Handler ++: Start pipeline
+Handler -[REQUEST_COLOR]> Handler: Set pipeline state to PLAYING
+
+ManagerThread -[REQUEST_COLOR]> Manager: registerPipelineHandler(id, handler)
+ManagerThread --: Continue processing next request
+
+Handler -[CALLBACK_COLOR]> Handler: Report status change
+Handler -[CALLBACK_COLOR]> Manager ++: onHandlerCallback(STARTED, id, requestId, message)
+
+note across #F8F9FA
+  <b>Key Architectural Features:</b>
+  
+  1. <color:#2E7D32><b>Request Path (Green):</b></color>
+     - Fully decoupled from callback path
+     - Thread-safe queuing mechanism
+     - Non-blocking operations
+  
+  2. <color:#8D332E><b>Callback Path (Maroon):</b></color>
+     - Independent callback thread
+     - Separate queue and mutex
+     - Status changes never block request processing
+  
+  3. <b>PipelineHandler Design:</b>
+     - Central executor component
+     - Direct interaction with media framework
+     - Reports all status changes through callback chain
+  
+  This architecture ensures complete isolation between input and output flows,
+  allowing maximum throughput and responsiveness even under heavy load.
+end note
+
+footer VideoManager Pipeline by Jigar Corp. - Created: 2025-03-06
+
+@enduml

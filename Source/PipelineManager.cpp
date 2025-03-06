@@ -277,7 +277,8 @@ void PipelineManager::createPipelineInternal(PipelineID id, size_t iRequestID, c
 {
     std::lock_guard<std::mutex> lock(m_pipemangermutex);
 
-    try {
+    try 
+    {
         // Create a new pipeline handler
         auto handler = std::make_unique<PipelineHandler>(streamDevice);
 
@@ -420,4 +421,17 @@ size_t PipelineManager::getQueueSize()
 {
     std::lock_guard<std::mutex> lock(m_pipemangermutex);
     return m_pipelinerequest.size();
+}
+
+void PipelineManager::onHandlerCallback(PipelineStatus status, size_t pipelineId,
+                         size_t requestId, const std::string& message)
+{
+    // Manager can add additional context here if needed
+    if (m_callback)
+    {
+        std::cerr << "onHandlerCallback sdfsdfsdfsdf " << message << std::endl;
+
+        // Instead of calling directly, use the callback which will now queue it
+        m_callback(status, pipelineId, requestId, message);
+    }
 }

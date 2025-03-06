@@ -73,14 +73,7 @@ private:
 
     // Internal callback from Handler to Manager
     void onHandlerCallback(PipelineStatus status, size_t pipelineId, 
-                         size_t requestId, const std::string& message) 
-    {
-        // Manager can add additional context here if needed
-        if (m_callback) 
-        {
-            m_callback(status, pipelineId, requestId, message);
-        }
-    }
+                         size_t requestId, const std::string& message);
 
 public:
     

@@ -1,0 +1,203 @@
+@startuml Video Manager Pipeline Architecture
+!theme plain
+
+' Apply global styling
+skinparam monochrome false
+skinparam shadowing false
+skinparam DefaultFontName "Arial"
+skinparam DefaultFontSize 12
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+
+' Professional color palette
+!define CENTRAL_COLOR #EBF1DD
+!define INPUT_COLOR #E6EFC8
+!define OUTPUT_COLOR #F3E9E4
+!define PROCESSING_COLOR #E3E8F1
+!define INTERFACE_COLOR #EFEFEF
+
+' Define stereotypes with custom colors
+skinparam class {
+    BackgroundColor PROCESSING_COLOR
+    BorderColor #707070
+    ArrowColor #606060
+}
+
+skinparam note {
+    BackgroundColor #F5F5F5
+    BorderColor #A0A0A0
+}
+
+skinparam component {
+    BackgroundColor PROCESSING_COLOR
+    BorderColor #707070
+}
+
+' Define the main application
+component "Main Application" as Main #INTERFACE_COLOR {
+    interface "Client API" as ClientAPI
+}
+
+' Core Pipeline Process Component Group
+package "Pipeline Process (Singleton)" as PProcessPkg #CENTRAL_COLOR {
+    component "PipelineProcess" as Process {
+        portin "Request Entry" as ProcessRequestIn
+        portout "Callback Exit" as ProcessCallbackOut
+        
+        component "Event Thread" as EventThread #INPUT_COLOR {
+            interface "processEvents()" as ProcessEvents
+        }
+        
+        component "Callback Thread" as CallbackThread #OUTPUT_COLOR {
+            interface "processCallbacks()" as ProcessCallbacks
+        }
+    }
+    
+    database "Event Queue\n(TQueue<PipelineRequest>)" as EventQueue #INPUT_COLOR {
+        interface "enqueue/dequeue" as EventQueueAPI
+    }
+    
+    database "Callback Queue\n(TQueue<CallbackData>)" as CallbackQueue #OUTPUT_COLOR {
+        interface "enqueue/dequeue" as CallbackQueueAPI
+    }
+}
+
+' Pipeline Manager Component Group
+package "Pipeline Manager" as PManagerPkg #PROCESSING_COLOR {
+    component "PipelineManager" as Manager {
+        portin "Request Entry" as ManagerRequestIn
+        portout "Callback Exit" as ManagerCallbackOut
+        
+        component "Worker Thread" as WorkerThread #INPUT_COLOR {
+            interface "processPipelineRequest()" as ProcessRequests
+        }
+    }
+    
+    database "Pipeline Request Queue" as PipelineRequestQueue #INPUT_COLOR {
+        interface "enqueuePipelineRequest" as PipelineQueueAPI
+    }
+}
+
+' Pipeline Handler Component Group - The main executor
+package "Pipeline Handler (Executor)" as PHandlerPkg #E3E8F1 {
+    component "PipelineHandler" as Handler {
+        portin "Command Entry" as HandlerCommandIn
+        portout "Status Exit" as HandlerStatusOut
+        
+        interface "start()" as Start
+        interface "pause()" as Pause
+        interface "resume()" as Resume
+        interface "stop()" as Stop
+        interface "updateConfiguration()" as Update
+        interface "terminate()" as Terminate
+        
+        component "Pipeline" as Pipeline {
+            interface "buildPipeline()" as BuildPipeline
+        }
+    }
+}
+
+' Data Structures
+class "PipelineRequest" as Request #INPUT_COLOR {
+    + action : PipelineAction
+    + id : std::string
+    + requestId : int
+    + configPath : std::string
+}
+
+class "CallbackData" as CallbackData #OUTPUT_COLOR {
+    + status : PipelineStatus
+    + id : std::string
+    + requestId : int
+    + message : std::string
+}
+
+' External Components
+component "StreamDiscoverer" as Discoverer #INTERFACE_COLOR
+
+' Connection for initialization and request flow
+ClientAPI --> ProcessRequestIn : "1. initialize()\n2. enqueueRequest()"
+ProcessRequestIn -> EventQueueAPI : "3. enqueue(request)"
+EventQueueAPI --> ProcessEvents : "4. dequeue()"
+ProcessEvents -> ManagerRequestIn : "5. sendPipelineRequest()"
+ManagerRequestIn -> PipelineQueueAPI : "6. enqueuePipelineRequest()"
+PipelineQueueAPI --> ProcessRequests : "7. process request"
+ProcessRequests --> HandlerCommandIn : "8. execute operation\n(start/pause/resume/stop/etc.)"
+HandlerCommandIn --> Pipeline : "9. perform pipeline operation"
+
+' Connection for callback flow
+HandlerStatusOut --> ManagerCallbackOut : "1. reportStatus()\n(onHandlerCallback)"
+ManagerCallbackOut --> ProcessCallbackOut : "2. onManagerCallback()"
+ProcessCallbackOut -> CallbackQueueAPI : "3. enqueueCallback()"
+CallbackQueueAPI --> ProcessCallbacks : "4. dequeue callback"
+ProcessCallbacks --> ClientAPI : "5. deliver callback"
+
+' Additional connections
+Handler --> Discoverer : "discover stream"
+Discoverer --> Handler : "stream info"
+
+' Group shutdown sequence
+note right of Process #F5F5F5
+    <b>Shutdown Process</b>
+    1. PipelineProcess::shutdown() is called
+    2. Set atomic flags (runEventThread_ and runCallbackThread_) to false
+    3. Notify all condition variables to wake waiting threads
+    4. Join both event and callback threads
+    5. Signal PipelineManager to terminate all handlers
+    6. Each PipelineHandler terminates its pipeline safely
+end note
+
+legend right
+  <b>Component Types</b>
+  |= Component |= Purpose |
+  |<#EBF1DD>| Central Component (PipelineProcess) |
+  |<#E6EFC8>| Input Flow (Requests) |
+  |<#F3E9E4>| Output Flow (Callbacks) |
+  |<#E3E8F1>| Processing Components |
+endlegend
+
+note as InputFlowNote #F8F9F6
+  <b>Input Flow (Request Processing)</b>
+  
+  1. Client sends request through Main Application API
+  2. PipelineProcess enqueues request in Event Queue
+  3. Event Thread dequeues and processes requests
+  4. PipelineManager receives and enqueues in internal queue
+  5. Worker Thread processes requests in PipelineManager
+  6. PipelineHandler executes the appropriate pipeline operation
+end note
+
+note as OutputFlowNote #FCF5F1
+  <b>Output Flow (Callback Processing)</b>
+  
+  1. PipelineHandler detects state change and reports status
+  2. PipelineManager forwards callback to PipelineProcess
+  3. PipelineProcess enqueues callback data in Callback Queue
+  4. Callback Thread dequeues and delivers callbacks to client
+  5. Main Application receives status updates and notifies client
+end note
+
+note as AsyncNote
+  <b>Asynchronous Communication Architecture</b>
+  
+  The architecture implements a fully decoupled, non-blocking asynchronous communication model:
+  
+  <b>Key Features:</b>
+  - <b>Thread Isolation:</b> Input and output paths run on independent threads
+  - <b>Queue Buffering:</b> Thread-safe queues prevent blocking between producers and consumers
+  - <b>Mutex Protection:</b> Each queue has its own mutex to prevent race conditions
+  - <b>Conditional Signaling:</b> Condition variables efficiently wake threads when data is available
+  - <b>Non-blocking Operations:</b> Client requests never block on callback delivery
+  
+  This design ensures that slow consumers (callbacks) never block producers (requests),
+  allowing the system to maintain responsiveness even under heavy load.
+  
+  <b>Benefits:</b>
+  - Increased throughput
+  - Better responsiveness
+  - Improved scalability
+  - Resilience to varying processing speeds
+end note
+
+@enduml

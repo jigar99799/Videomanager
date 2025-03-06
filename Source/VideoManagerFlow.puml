@@ -1,62 +1,256 @@
 @startuml Video Manager Pipeline Flow
 
-' Define participants
+' Define global styling
+skinparam sequenceArrowThickness 2
+skinparam sequenceGroupBackgroundColor WhiteSmoke
+skinparam sequenceGroupBodyBackgroundColor White
+skinparam noteBorderColor Gray
+skinparam noteBackgroundColor #F5F5F5
+skinparam shadowing false
+skinparam monochrome false
+
+' Define participants with professional colors
 actor Client
-participant "Main" as Main
-participant "PipelineProcess" as Process
-participant "PipelineManager" as Manager
-participant "PipelineHandler" as Handler
-participant "StreamDiscoverer" as Discoverer
+participant "Main\nApplication" as Main #E3E8F1
+participant "PipelineProcess\n(Singleton)" as Process #EBF1DD
+queue "Event Queue\n(Request Queue)" as EventQueue #E6EFC8
+queue "Callback Queue\n(Status Queue)" as CallbackQueue #F3E9E4
+participant "Input Thread\n(Receiver)" as InputThread #E6EFC8
+participant "Callback Thread\n(Transmitter)" as CallbackThread #F3E9E4
+participant "PipelineManager" as Manager #E3E8F1
+participant "PipelineHandler" as Handler #E3E8F1
+participant "StreamDiscoverer" as Discoverer #EFEFEF
 
-' Define main flow
-Client -> Main: Request Pipeline Operation
-Main -> Process: enqueueRequest(PipelineRequest)
-Process -> Process: processEvents()
-Process -> Manager: sendPipelineRequest(request)
-Manager -> Manager: enqueuePipelineRequest(request)
-Manager -> Manager: processpipelinerequest()
+' Color coding for arrows - more professional/corporate tones
+' Dark green arrows for input flow (requests)
+' Deep maroon for output flow (callbacks)
+' Deep blue for initialization
+' Gray for shutdown
 
-' Branch based on action type
-alt ACTION_CREATE
-    Manager -> Manager: validatepipelineConfig()
-    Manager -> Manager: findMatchingpipeline()
-    Manager -> Manager: createPipelineInternal()
-    Manager -> Handler: <<create>>
-    Handler -> Discoverer: DiscoverStream()
-    Discoverer -> Handler: StreamInfo
-    Handler -> Handler: buildPipeline()
-else ACTION_START
-    Manager -> Manager: findMatchingpipeline()
-    alt Pipeline exists
-        Manager -> Handler: start()
-    else Pipeline doesn't exist
-        Manager -> Manager: createPipelineInternal()
-        Manager -> Handler: <<create>>
-        Handler -> Discoverer: DiscoverStream()
-        Discoverer -> Handler: StreamInfo
-        Handler -> Handler: buildPipeline()
-        Manager -> Handler: start()
-    end
-else ACTION_UPDATE
-    Manager -> Manager: findMatchingpipeline()
-    Manager -> Manager: canUpdatePipeline()
-    Manager -> Manager: updatePipelineInternal()
-    Manager -> Handler: updateConfiguration()
-else ACTION_PAUSE
-    Manager -> Handler: pause()
-else ACTION_RESUME
-    Manager -> Handler: resume()
-else ACTION_STOP
-    Manager -> Handler: stop()
-else ACTION_TERMINATE
-    Manager -> Handler: terminate()
+legend right
+  <b>Component Types</b>
+  |= Component |= Purpose |
+  |<#EBF1DD>| Central Component |
+  |<#E6EFC8>| Input Flow (Requests) |
+  |<#F3E9E4>| Output Flow (Callbacks) |
+  |<#E3E8F1>| Processing Components |
+endlegend
+
+' === INITIALIZATION FLOW ===
+group #E8F1FA Initialization Flow
+  Client -[#2E5B8D]> Main : Initialize Pipeline System
+  activate Main
+  
+  Main -[#2E5B8D]> Process : initialize()
+  activate Process
+  
+  Process -[#2E5B8D]> Process : Create event thread
+  Process -[#2E5B8D]> InputThread **: <<create>>
+  activate InputThread #E6EFC8
+  
+  Process -[#2E5B8D]> Process : Create callback thread
+  Process -[#2E5B8D]> CallbackThread **: <<create>>
+  activate CallbackThread #F3E9E4
+  
+  Process -[#2E5B8D]> Manager : initializeManager()
+  activate Manager
+  
+  Main -[#2E5B8D]> Process : setCallback(pipelineCallback)
+  
+  Process -[#2E5B8D]-> Main : Initialization complete
+  deactivate Process
+  deactivate Main
 end
 
-' Callback flow
-Handler -> Handler: busCallback() [GStreamer events]
-Handler -> Manager: onHandlerCallback()
-Manager -> Process: onManagerCallback()
-Process -> Main: pipelineCallback()
-Main -> Client: Status update
+' === INPUT FLOW (REQUEST PROCESSING) ===
+group #F8F9F6 Input Flow - Request Processing (Client to Pipeline)
+  Client -[#2E7D32]> Main : Request Pipeline Operation
+  activate Main #E6EFC8
+  
+  Main -[#2E7D32]> Process : enqueueRequest(PipelineRequest)
+  activate Process #E6EFC8
+  Process -[#2E7D32]> EventQueue : enqueue(request)
+  deactivate Process
+  deactivate Main
+  
+  note right of EventQueue #F8F9F6
+    <b>Thread-safe Event Queue</b>
+    - Stores incoming requests
+    - Protected by mutex
+    - Wakes up Input Thread when data arrives
+  end note
+  
+  EventQueue -[#2E7D32]> InputThread : wake up (condition_variable)
+  InputThread -[#2E7D32]> EventQueue : dequeue()
+  
+  note left of InputThread #F8F9F6
+    <b>Input Thread (Receiver)</b>
+    - Runs in PipelineProcess::processEvents()
+    - Waits on condition variable
+    - Processes one request at a time
+  end note
+  
+  InputThread -[#2E7D32]> Manager : sendPipelineRequest(request)
+  activate Manager #E6EFC8
+  Manager -[#2E7D32]> Manager : enqueuePipelineRequest(request)
+  
+  note right of Manager #F8F9F6
+    <b>PipelineManager</b>
+    - Maintains request queue
+    - Worker thread processes requests
+    - Manages multiple PipelineHandlers
+  end note
+  
+  Manager -[#2E7D32]> Manager : processpipelinerequest()
+end
+
+' Branch based on action type
+group #F8F9F6 Action Processing (By Action Type)
+  alt ACTION_CREATE
+      Manager -[#2E7D32]> Manager : validatePipelineConfig()
+      Manager -[#2E7D32]> Manager : findMatchingPipeline()
+      Manager -[#2E7D32]> Manager : createPipelineInternal()
+      Manager -[#2E7D32]> Handler **: <<create>>
+      activate Handler #E6EFC8
+      
+      note right of Handler #F8F9F6
+        <b>PipelineHandler (Main Executor)</b>
+        - Builds and manages a GStreamer pipeline
+        - Reports status changes to Manager
+        - Executes all pipeline operations
+      end note
+      
+      Handler -[#2E7D32]> Discoverer : DiscoverStream()
+      Discoverer -[#2E7D32]-> Handler : StreamInfo
+      Handler -[#2E7D32]> Handler : buildPipeline()
+  else ACTION_START
+      Manager -[#2E7D32]> Manager : findMatchingPipeline()
+      alt Pipeline exists
+          Manager -[#2E7D32]> Handler : start()
+      else Pipeline doesn't exist
+          Manager -[#2E7D32]> Manager : createPipelineInternal()
+          Manager -[#2E7D32]> Handler **: <<create>>
+          activate Handler #E6EFC8
+          Handler -[#2E7D32]> Discoverer : DiscoverStream()
+          Discoverer -[#2E7D32]-> Handler : StreamInfo
+          Handler -[#2E7D32]> Handler : buildPipeline()
+          Manager -[#2E7D32]> Handler : start()
+      end
+  else ACTION_UPDATE
+      Manager -[#2E7D32]> Manager : findMatchingPipeline()
+      Manager -[#2E7D32]> Manager : canUpdatePipeline()
+      Manager -[#2E7D32]> Manager : updatePipelineInternal()
+      Manager -[#2E7D32]> Handler : updateConfiguration()
+  else ACTION_PAUSE
+      Manager -[#2E7D32]> Handler : pause()
+  else ACTION_RESUME
+      Manager -[#2E7D32]> Handler : resume()
+  else ACTION_STOP
+      Manager -[#2E7D32]> Handler : stop()
+  else ACTION_TERMINATE
+      Manager -[#2E7D32]> Handler : terminate()
+      deactivate Handler
+  end
+  deactivate Manager
+end
+
+' === OUTPUT FLOW (CALLBACK PROCESSING) ===
+group #FCF5F1 Output Flow - Asynchronous Callbacks (Pipeline to Client)
+  Handler -[#8D332E]> Handler : reportStatus() [Event/State Change]
+  activate Handler #F3E9E4
+  Handler -[#8D332E]> Manager : onHandlerCallback(status, id, requestId, message)
+  activate Manager #F3E9E4
+  Manager -[#8D332E]> Process : onManagerCallback(status, id, requestId, message)
+  activate Process #F3E9E4
+  Process -[#8D332E]> Process : Create CallbackData
+  Process -[#8D332E]> CallbackQueue : enqueue(callbackData)
+  deactivate Process
+  deactivate Manager
+  deactivate Handler
+  
+  note right of CallbackQueue #FCF5F1
+    <b>Thread-safe Callback Queue</b>
+    - Stores status updates & errors
+    - Protected by separate mutex
+    - Wakes up Callback Thread when data arrives
+  end note
+  
+  CallbackQueue -[#8D332E]> CallbackThread : wake up (condition_variable)
+  CallbackThread -[#8D332E]> CallbackQueue : dequeue()
+  
+  note left of CallbackThread #FCF5F1
+    <b>Callback Thread (Transmitter)</b>
+    - Runs in PipelineProcess::processCallbacks()
+    - Waits on separate condition variable
+    - Sends callbacks to main application
+  end note
+  
+  CallbackThread -[#8D332E]> Main : pipelineCallback(status, id, requestId, message)
+  activate Main #F3E9E4
+  Main -[#8D332E]> Client : Status update
+  deactivate Main
+end
+
+' === SHUTDOWN FLOW ===
+group #EFEFEF Shutdown Flow
+  Client -[#777777]> Main : Shutdown pipeline system
+  activate Main
+  
+  Main -[#777777]> Process : shutdown()
+  activate Process
+  
+  Process -[#777777]> Process : Set runEventThread_ = false
+  Process -[#777777]> Process : Set runCallbackThread_ = false
+  Process -[#777777]> EventQueue : Notify all waiting threads
+  Process -[#777777]> CallbackQueue : Notify all waiting threads
+  
+  Process -[#777777]> InputThread : Join thread
+  deactivate InputThread
+  
+  Process -[#777777]> CallbackThread : Join thread
+  deactivate CallbackThread
+  
+  Process -[#777777]> Manager : terminateAllPipelines()
+  activate Manager
+  
+  Manager -[#777777]> Handler : terminate()
+  activate Handler
+  Handler -[#777777]> Handler : Release pipeline resources
+  deactivate Handler
+  
+  Manager -[#777777]> Manager : Clear pipeline map
+  Manager -[#777777]-> Process : All pipelines terminated
+  deactivate Manager
+  
+  Process -[#777777]-> Main : Shutdown complete
+  deactivate Process
+  deactivate Main
+end
+
+note across #F5F5F5
+  <b>Asynchronous Communication Architecture</b>
+  
+  The system uses two <b>fully independent</b> thread paths for non-blocking operation:
+  
+  <color:#2E7D32><b>1. Input Flow:</b></color>
+  - Client requests flow through Main → PipelineProcess → EventQueue → InputThread → PipelineManager → PipelineHandler
+  - The InputThread (Receiver) pulls requests from the queue and processes them
+  
+  <color:#8D332E><b>2. Output Flow:</b></color>
+  - Status updates flow from PipelineHandler → PipelineManager → PipelineProcess → CallbackQueue → CallbackThread → Main → Client
+  - The CallbackThread (Transmitter) pulls callbacks from the queue and sends them to the client
+  
+  <color:#2E5B8D><b>3. Initialization:</b></color>
+  - Creates both threads and initializes the queues and management components
+  - Sets up the callback connection between PipelineProcess and Main Application
+  
+  <color:#777777><b>4. Shutdown:</b></color>
+  - Safely stops threads using atomic flags
+  - Notifies condition variables to wake any waiting threads
+  - Terminates all pipeline handlers before final cleanup
+  
+  This design ensures complete decoupling between request processing and status reporting,
+  allowing maximum throughput and responsiveness even under heavy load.
+end note
 
 @enduml

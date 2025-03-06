@@ -32,10 +32,23 @@ private:
     static PipelineCallback         m_callback;  // Callback to main
     static std::once_flag           s_onceFlag;
     static std::atomic<bool>        g_processrunning;
+    static std::condition_variable  m_cvCallbackQueue;
+
+    // Structure to hold callback data
+    struct CallbackData {
+        PipelineStatus status;
+        size_t pipelineId;
+        size_t requestId;
+        std::string message;
+    };
 
     std::unique_ptr<PipelineManager>         m_pipelineManager;
     std::unique_ptr<TQueue<PipelineRequest>> m_eventQueue;
+    std::unique_ptr<TQueue<CallbackData>>    m_callbackQueue;
     std::thread m_processingThread;
+    std::thread m_callbackThread;
+    static std::atomic<bool>        g_callbackrunning;
+    static std::mutex               callback_mutex;
    
     // Private constructor to prevent instantiation
     PipelineProcess() 
@@ -51,21 +64,15 @@ private:
     }
 
     void processEvents();
+    void processCallbacks();
     
     // Handle pipeline errors and propagate them to application
-    static  void PipelineErrorcallback(const std::string& error);
+   // static  void PipelineErrorcallback(const std::string& error);
 
     // Internal callback from Manager to Process
     static void onManagerCallback(PipelineStatus status, size_t pipelineId,
-                         size_t requestId, const std::string& message) 
-    {
-        // Process can add additional context here if needed
-        if (m_callback) 
-        {
-            m_callback(status, pipelineId, requestId, message);
-        }
-    }
-
+                         size_t requestId, const std::string& message);
+    
 public:
     // Delete copy constructor and assignment operator
     PipelineProcess(const PipelineProcess&) = delete;
@@ -80,6 +87,9 @@ public:
     // Set callback for pipeline status updates and errors
     static void setCallback(PipelineCallback callback);
     
+    // Helper method to enqueue a callback
+    void enqueueCallback(const CallbackData& data);
+
     // Clean up the singleton instance - call this at application exit
     static void cleanupInstance() {
         s_instance.reset();

@@ -1,0 +1,23 @@
+@startuml
+participant Main
+participant PipelineProcess
+participant ConfigManager
+participant CallbackHandler
+
+Main -> PipelineProcess: initialize(configPath, callback)
+activate PipelineProcess
+
+PipelineProcess -> ConfigManager: loadConfig(configPath)
+ConfigManager --> PipelineProcess: configStatus
+
+alt configValid
+  PipelineProcess -> CallbackHandler: registerCallback(callback)
+  CallbackHandler --> PipelineProcess: registrationStatus
+  PipelineProcess --> Main: success
+else configError
+  PipelineProcess --> Main: failure
+  Main -> Main: handleError()
+end
+
+deactivate PipelineProcess
+@enduml

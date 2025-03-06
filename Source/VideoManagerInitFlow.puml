@@ -1,0 +1,54 @@
+@startuml Video Manager Initialization Flow
+!theme plain
+
+' Simple styling
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam DefaultFontName "Arial"
+skinparam DefaultFontSize 12
+skinparam ArrowColor #606060
+skinparam ArrowThickness 1.5
+
+' Simple colors
+!define PRIMARY_COLOR #3C6E71
+!define SECONDARY_COLOR #4A8E91
+
+' Flow chart styling
+skinparam activity {
+    BackgroundColor white
+    BorderColor #DDDDDD
+    BorderThickness 1.5
+    FontColor black
+}
+
+title Video Manager Pipeline Initialization Flow
+
+start
+
+:Initialize Logger;
+
+:Get PipelineProcess Instance;
+
+if (Instance Exists?) then (yes)
+    :Return Existing Instance;
+else (no)
+    :Create PipelineProcess Instance;
+endif
+
+:Initialize PipelineManager;
+
+:Set Callback Handler;
+
+:Load Configuration;
+
+:Initialize Media Framework;
+
+:Register System Callbacks;
+
+:Set System Ready State;
+
+stop
+
+footer VideoManager Pipeline - Created: 2025-03-06
+
+@enduml
