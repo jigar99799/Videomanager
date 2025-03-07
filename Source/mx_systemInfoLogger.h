@@ -1,33 +1,76 @@
-#ifndef SYSTEM_INFO_LOGGER_H
-#define SYSTEM_INFO_LOGGER_H
+#pragma once
 
 #include <string>
 #include <mutex>
+#include <vector>
+#include <map>
 
 class SystemInfoLogger {
 public:
-    static SystemInfoLogger& getInstance();  // Singleton access
-
-    void logSystemInfo();  // Function to log system info
-
-private:
-    std::mutex mutex_; // For thread safety
-
-    // Private Constructor (Singleton)
-    SystemInfoLogger();
+    // Get singleton instance
+    static SystemInfoLogger& getInstance();
     
-    // Disable copy & assignment
+    // Delete copy constructor and assignment operator
     SystemInfoLogger(const SystemInfoLogger&) = delete;
     SystemInfoLogger& operator=(const SystemInfoLogger&) = delete;
-
-    // Internal helper functions
-    std::string getCurrentTimestamp();
-    std::string getBuildTimestamp();
+    
+    // Public methods
+    void logSystemInfo(); 
+    
+    // Component registration and status tracking
+    void registerComponent(const std::string& componentName);
+    void updateComponentStatus(const std::string& componentName, bool success, const std::string& message);
+    bool isComponentInitialized(const std::string& componentName);
+    
+    // Queue and handler initialization
+    void initializeReceiveQueue(bool success, const std::string& message);
+    void initializeTransmitQueue(bool success, const std::string& message);
+    void initializeLogHandler(bool success, const std::string& message);
+    
+    // Library and hardware information
+    void addLibraryInfo(const std::string& name, const std::string& version, const std::string& buildDate);
+    
+    // Status and acknowledgment
+    bool areAllComponentsInitialized();
+    std::string generateVideoManagerAcknowledgment();
+    void sendAcknowledgmentToVideoManager();
+    
+private:
+    // Private constructor and destructor
+    SystemInfoLogger();
+    ~SystemInfoLogger() = default;
+    
+    // Private helper methods
     std::string getSystemUptime();
     std::string getSystemInfo();
-    std::string getGPUInfo();
+    std::string getInitializationInfo();
+    std::string getGPUInfo() ;
+    std::string getBuildTimestamp() ;
     void archiveOldLogs();
     void writeSystemInfoToFile();
+    void writeComponentStatusToFile();
+    void checkAndUpdateAllComponentsStatus();
+    
+    // Component status structure
+    struct ComponentStatus {
+        bool initialized;
+        std::string statusMessage;
+        std::string timestamp;
+    };
+    
+    // Library information structure
+    struct LibraryInfo {
+        std::string name;
+        std::string version;
+        std::string buildDate;
+    };
+    
+    // Private members
+    std::mutex mutex_;
+    std::map<std::string, ComponentStatus> componentStatus;
+    std::vector<LibraryInfo> libraryInfo;
+    bool receiveQueueInitialized;
+    bool transmitQueueInitialized;
+    bool logHandlerInitialized;
+    bool allComponentsInitialized;
 };
-
-#endif // SYSTEM_INFO_LOGGER_H

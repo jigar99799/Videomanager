@@ -6,12 +6,11 @@
 #include <chrono>
 #include <iostream>
 #include <functional>
+#include <queue>
+#include <memory>
 #include "PipelineManager.h"
-#include "TQueue.h"
 #include "PipelineRequest.h"
 #include "mx_logger.h"
-
-
 
 // Define the callback type that will be exposed to main
 using PipelineCallback = std::function<void(
@@ -42,11 +41,11 @@ private:
         std::string message;
     };
 
-    std::unique_ptr<PipelineManager>         m_pipelineManager;
-    std::unique_ptr<TQueue<PipelineRequest>> m_eventQueue;
-    std::unique_ptr<TQueue<CallbackData>>    m_callbackQueue;
-    std::thread m_processingThread;
-    std::thread m_callbackThread;
+    std::unique_ptr<PipelineManager>                m_pipelineManager;
+    std::unique_ptr<std::queue<PipelineRequest>>    m_eventQueue;
+    std::unique_ptr<std::queue<CallbackData>>       m_callbackQueue;
+    std::unique_ptr<std::thread>                    m_processingThread;
+    std::unique_ptr<std::thread>                    m_callbackThread;
     static std::atomic<bool>        g_callbackrunning;
     static std::mutex               callback_mutex;
    

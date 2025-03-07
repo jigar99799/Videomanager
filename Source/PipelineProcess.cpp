@@ -1,5 +1,8 @@
 #include "PipelineProcess.h"
 #include "mx_systemInfoLogger.h"
+#include <string>
+#include <string.h>
+#include <Poco/Environment.h>
 
 // Define static members
 std::unique_ptr<PipelineProcess, std::function<void(PipelineProcess*)>> PipelineProcess::s_instance = 
@@ -34,79 +37,169 @@ bool PipelineProcess::initialize(const char* debugconfigPath, PipelineCallback c
     {
         if (s_instance)
         {
-            MX_LOG_INFO("PipelineProcess", "PipelineProcess allready init");
+            MX_LOG_INFO("PipelineProcess", "PipelineProcess already initialized");
             return true;
         }
 
-        SystemInfoLogger::getInstance().logSystemInfo();
 
+        //////////////////////////////////////////////////////////////////////////////////////////////
+        // Get the SystemInfoLogger instance
+        auto& logger = SystemInfoLogger::getInstance();
+        
+        // Register all components that need to be initialized
+        logger.registerComponent("Log Handler");
+        logger.registerComponent("Pipeline Manager");
+        logger.registerComponent("Event Queue");
+        logger.registerComponent("Processing Thread");
+        logger.registerComponent("Callback Queue");
+        logger.registerComponent("Callback Thread");
+
+        // Add SDK and library information
+        logger.addLibraryInfo("PipelineSDK", "1.0.0", __DATE__ " " __TIME__);
+        logger.addLibraryInfo("Poco", "1.9.4", "");
+        
+        // Register hardware capabilities
+        #ifdef _WIN32
+        logger.addHardwareCapability("OS", "Windows", Poco::Environment::osVersion());
+        #else
+        logger.addHardwareCapability("OS", "Linux", Poco::Environment::osVersion());
+        #endif
+        
+        logger.addHardwareCapability("CPU Cores", std::to_string(Poco::Environment::processorCount()), "Available for processing");
+        logger.addHardwareCapability("Memory", "Optimized", "Dynamic allocation based on workload");
+        logger.addHardwareCapability("Video Processing", "Enabled", "H.264/H.265 codec support");
+        /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        
         // set callback
         m_callback = std::move(callback);
 
         // Get the singleton instance
         PipelineProcess& instance = getInstance();
                
-        // Step :1 init the Logger 
 
+        // Step 1: Initialize the Logger
         MXLOGGER_STATUS_CODE status = MxLogger::instance().initialize(debugconfigPath);
         if (status != MXLOGGER_INIT_SUCCESSFULLY && status != MXLOGGER_STATUS_ALLREADY_INITIALIZED)
         {
-            onManagerCallback(PipelineStatus::Information, 0, 0, "Pipeline logger initialized failed ");
+            logger.updateComponentStatus("Log Handler", false, "Failed to initialize - error code: " + std::to_string(status));
+            onManagerCallback(PipelineStatus::Information, 0, 0, "Pipeline logger initialization failed");
             
-            // TODO : this failed is not important 
-           //return false;
+            // Since SystemInfoLogger already has auto-initialization, we don't return false here
+            // to allow the pipeline to continue initializing
         }
         else
         {
-            MX_LOG_INFO("PipelineProcess", "Logger initialized successfully");
+            logger.updateComponentStatus("Log Handler", true, ("Successfully initialized with config: " + std::string(debugconfigPath)));
+            MX_LOG_INFO("PipelineProcess", "Log Handler initialized successfully");
         }
        
-        // Step :2 Create and init the Pipeline Manager 
+        // Step 2: Create and initialize the Pipeline Manager
+        logger.updateComponentStatus("Pipeline Manager", false, "Creating manager instance");
+
         instance.m_pipelineManager = std::make_unique<PipelineManager>();
-
-        if (instance.m_pipelineManager == NULL)
+        if (!instance.m_pipelineManager)
         {
-            MX_LOG_TRACE("PipelineProcess", "Pipeline manager creation failed");
-
-            PipelineProcess::onManagerCallback(PipelineStatus::Error, 0, 0, std::string("Pipeline manager creation failed"));
-
-            //PipelineErrorcallback("Pipeline manager creation failed");
+            logger.updateComponentStatus("Pipeline Manager", false, "Failed to create manager instance");
+            MX_LOG_ERROR("PipelineProcess", "Failed to create Pipeline Manager");
             return false;
         }
-
+        
+        bool managerInitialized = true ;
         instance.m_pipelineManager->initializemanager();
 
-        // Set up the manager callback
-        instance.m_pipelineManager->setManagerCallback(
-            std::bind(&PipelineProcess::onManagerCallback, 
-                     std::placeholders::_1,
-                     std::placeholders::_2,
-                     std::placeholders::_3,
-                     std::placeholders::_4));
+        if (!managerInitialized)
+        {
+            logger.updateComponentStatus("Pipeline Manager", false, "Manager initialization failed");
+            MX_LOG_ERROR("PipelineProcess", "Pipeline Manager initialization failed");
+            return false;
+        }
+        
+        logger.updateComponentStatus("Pipeline Manager", true, "Manager initialized successfully");
+        MX_LOG_INFO("PipelineProcess", "Pipeline Manager initialized successfully");
+        
 
-        // Step 3 : start the worker thread for processing the incomming request
-        instance.m_processingThread = std::thread(&PipelineProcess::processEvents, &instance);
-
-        // Start the callback processing thread
-        instance.m_callbackThread = std::thread(&PipelineProcess::processCallbacks, &instance);
+        // Step 3: Initialize Event Queue
+        logger.updateComponentStatus("Event Queue", false, "Initializing event queue");
+        instance.m_eventQueue = std::make_unique<std::queue<PipelineRequest>>();
+        if (!instance.m_eventQueue)
+        {
+            logger.updateComponentStatus("Event Queue", false, "Failed to create event queue");
+            MX_LOG_ERROR("PipelineProcess", "Failed to create Event Queue");
+            return false;
+        }
+        
+        logger.updateComponentStatus("Event Queue", true, "Event queue initialized successfully");
+        logger.initializeReceiveQueue(true, "Event queue ready to receive requests");
+        MX_LOG_INFO("PipelineProcess", "Event Queue initialized successfully");
+        
+        // Step 4: Initialize Callback Queue
+        logger.updateComponentStatus("Callback Queue", false, "Initializing callback queue");
+        instance.m_callbackQueue = std::make_unique<std::queue<CallbackData>>();
+        if (!instance.m_callbackQueue)
+        {
+            logger.updateComponentStatus("Callback Queue", false, "Failed to create callback queue");
+            MX_LOG_ERROR("PipelineProcess", "Failed to create Callback Queue");
+            return false;
+        }
+        
+        logger.updateComponentStatus("Callback Queue", true, "Callback queue initialized successfully");
+        logger.initializeTransmitQueue(true, "Callback queue ready for transmitting results");
+        MX_LOG_INFO("PipelineProcess", "Callback Queue initialized successfully");
+        
+        // Step 5: Start Processing Thread
+        logger.updateComponentStatus("Processing Thread", false, "Starting processing thread");
         g_processrunning = true;
-
-        // Create event queue
-        instance.m_eventQueue = std::make_unique<TQueue<PipelineRequest>>();
-
-        // Create callback queue
-        instance.m_callbackQueue = std::make_unique<TQueue<CallbackData>>();
+        instance.m_processingThread = std::make_unique<std::thread>(&PipelineProcess::processEvents, &instance);
+        if (!instance.m_processingThread)
+        {
+            logger.updateComponentStatus("Processing Thread", false, "Failed to start processing thread");
+            MX_LOG_ERROR("PipelineProcess", "Failed to create Processing Thread");
+            return false;
+        }
+        
+        logger.updateComponentStatus("Processing Thread", true, "Processing thread started successfully");
+        MX_LOG_INFO("PipelineProcess", "Processing Thread started successfully");
+        
+        // Step 6: Start Callback Thread
+        logger.updateComponentStatus("Callback Thread", false, "Starting callback thread");
         g_callbackrunning = true;
+        instance.m_callbackThread = std::make_unique<std::thread>(&PipelineProcess::processCallbacks, &instance);
+        if (!instance.m_callbackThread)
+        {
+            logger.updateComponentStatus("Callback Thread", false, "Failed to start callback thread");
+            MX_LOG_ERROR("PipelineProcess", "Failed to create Callback Thread");
+            return false;
+        }
+        
+        logger.updateComponentStatus("Callback Thread", true, "Callback thread started successfully");
+        MX_LOG_INFO("PipelineProcess", "Callback Thread started successfully");
+        
+       
+        
+        // Send acknowledgment to Video Manager if all components are initialized
+        if (logger.areAllComponentsInitialized()) 
+        {
+            logger.sendAcknowledgmentToVideoManager();
+            MX_LOG_INFO("PipelineProcess", "Initialization complete - sent acknowledgment to Video Manager");
+        } 
+        else 
+        {
+            MX_LOG_WARN("PipelineProcess", "Initialization complete but some components failed to initialize");
+        }
 
-        MX_LOG_INFO("PipelineProcess", "Event queue initialized");
-
-        onManagerCallback(PipelineStatus::Success, 0, 0, "Pipeline process initialized successfully");
+        // Log the final system information with all components initialized
+        logger.logSystemInfo();
 
         return true;
     }
     catch (const std::exception& e)
     {
-        onManagerCallback(PipelineStatus::Error, 0, 0, std::string("Failed to initialize pipeline process: ") + e.what());
+        MX_LOG_ERROR("PipelineProcess", (std::string("Exception during initialization: ") + e.what()).c_str());
+        return false;
+    }
+    catch (...)
+    {
+        MX_LOG_ERROR("PipelineProcess", "Unknown exception during initialization");
         return false;
     }
 }
@@ -120,15 +213,16 @@ void PipelineProcess::processEvents()
             std::unique_lock<std::mutex> lock(s_mutex);
             m_cvEventQueue.wait(lock, [this]
                 {
-                    return !g_processrunning || !getInstance().m_eventQueue || !getInstance().m_eventQueue->isEmpty();
+                    return !g_processrunning || !getInstance().m_eventQueue || !getInstance().m_eventQueue->empty();
                 });
 
             if (!g_processrunning)
                 break;
 
-            if (getInstance().m_eventQueue && !getInstance().m_eventQueue->isEmpty())
+            if (getInstance().m_eventQueue && !getInstance().m_eventQueue->empty())
             {
-                PipelineRequest request = getInstance().m_eventQueue->dequeue();
+                PipelineRequest request = getInstance().m_eventQueue->front();
+                getInstance().m_eventQueue->pop();
                 getInstance().m_pipelineManager->sendPipelineRequest(request);
             }
         }
@@ -145,7 +239,7 @@ void PipelineProcess::enqueueRequest(const PipelineRequest& request)
     {
         {
             std::unique_lock<std::mutex> lock(s_mutex);
-            getInstance().m_eventQueue->enqueue(request);
+            getInstance().m_eventQueue->push(request);
         }
            
         m_cvEventQueue.notify_one();
@@ -183,15 +277,15 @@ void PipelineProcess::shutdown()
     }
 
     // Wait for the processing thread to finish
-    if (s_instance && s_instance->m_processingThread.joinable())
+    if (s_instance && s_instance->m_processingThread->joinable())
     {
-        s_instance->m_processingThread.join();
+        s_instance->m_processingThread->join();
     }
 
     // Wait for the callback thread to finish
-    if (s_instance && s_instance->m_callbackThread.joinable())
+    if (s_instance && s_instance->m_callbackThread->joinable())
     {
-        s_instance->m_callbackThread.join();
+        s_instance->m_callbackThread->join();
     }
        
     // Safely clean up resources
@@ -233,7 +327,7 @@ void PipelineProcess::enqueueCallback(const CallbackData& data)
     {
         {
             std::unique_lock<std::mutex> lock(callback_mutex);
-            m_callbackQueue->enqueue(data);
+            m_callbackQueue->push(data);
         }
         
         m_cvCallbackQueue.notify_one();
@@ -253,15 +347,16 @@ void PipelineProcess::processCallbacks()
             std::unique_lock<std::mutex> lock(callback_mutex);
             m_cvCallbackQueue.wait(lock, [this]
                 {
-                    return !g_callbackrunning || !m_callbackQueue || !m_callbackQueue->isEmpty();
+                    return !g_callbackrunning || !m_callbackQueue || !m_callbackQueue->empty();
                 });
 
             if (!g_callbackrunning)
                 break;
 
-            if (m_callbackQueue && !m_callbackQueue->isEmpty())
+            if (m_callbackQueue && !m_callbackQueue->empty())
             {
-                CallbackData data = m_callbackQueue->dequeue();
+                CallbackData data = m_callbackQueue->front();
+                m_callbackQueue->pop();
                 
                 // Release the lock before calling the callback to prevent deadlocks
                 lock.unlock();
